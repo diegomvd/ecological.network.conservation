@@ -20,6 +20,8 @@ object Species:
     Species(id, trophicLevel, degree,abundance = abundance, homeRange = homeRange)
 
   private def speciesTraits(trophicLevel: Int, degree: Int): (Double,Double) =
-    (trophicLevel, degree)
+    val abundance = trophicLevel + degree
+    val homeRange = trophicLevel * degree
+    (abundance, homeRange)
 
 end Species
