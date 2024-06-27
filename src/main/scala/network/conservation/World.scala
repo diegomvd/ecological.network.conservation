@@ -1,0 +1,286 @@
+package network.conservation
+
+import scala.util.Random
+import org.jgrapht.*
+import org.jgrapht.graph.*
+import org.apache.commons.math3.distribution.BetaDistribution
+import org.jgrapht.alg.connectivity.{ConnectivityInspector,KosarajuStrongConnectivityInspector}
+import org.locationtech.jts.geom.GeometryFactory
+import org.locationtech.jts.operation.distance.DistanceOp
+
+import scala.annotation.tailrec
+import scala.jdk.CollectionConverters.*
+
+case class World(populations: Seq[Population], managementLandscape: ManagementLandscape, metaWeb: DefaultDirectedGraph[Species, DefaultEdge], populationWeb: DefaultDirectedGraph[Population, DefaultEdge], worldParameters: WorldParameters, rnd: Random):
+
+  def primaryExtinctions(): World =
+   
+    val extinguishIds =
+      this.managementLandscape.managementAreas.flatMap(a => a.primaryExtinctions(this.worldParameters, this.rnd))
+
+    val extinguishVertices = populationWeb.vertexSet().asScala.collect {
+      case p if extinguishIds.contains( (p.species.id,p.id) ) => p
+    }
+
+    val newPopulationWeb: Boolean = populationWeb.removeAllVertices(extinguishVertices.asJavaCollection)
+
+    // If this is slow consider making populations a Map[Id,Pop]
+    val newPopulations = populations.map( p => if extinguishIds.contains((p.species.id,p.id)) then p.extinguish else p )
+
+    val extinctPopulations = newPopulations.collect { case p if p.extinct => (p.species.id, p.id) }
+    val newManagementLandscape = this.managementLandscape.updatePersistentPopulations(extinctPopulations)
+
+    this.copy(populations = newPopulations, populationWeb = populationWeb, managementLandscape = newManagementLandscape)
+
+
+  def secondaryExtinctions(): (World, Int) =
+
+    @tailrec
+    def extinctionCascades(populationWeb: DefaultDirectedGraph[Population, DefaultEdge], populations: Seq[Population], nCascades: Int):
+      (DefaultDirectedGraph[Population,DefaultEdge], Seq[Population], Int) =
+
+      val (extinguishVertices, extinguishIds) = this.populationWeb.vertexSet().asScala
+        .collect {
+          case p if p.species.trophicLevel>0 & this.populationWeb.outDegreeOf(p) == 0 => (p, (p.species.id, p.id))
+        }.unzip
+
+      if extinguishIds.isEmpty
+      then (populationWeb, populations, nCascades)
+      else {
+        val newPopulationWeb: Boolean = populationWeb.removeAllVertices(extinguishVertices.asJavaCollection)
+        // If this is slow consider making populations a Map[Id,Pop]
+        val newPopulations = populations.map(p => if extinguishIds.contains((p.species.id,p.id)) then p.extinguish else p)
+        val newNCascades = nCascades + 1
+
+        extinctionCascades(populationWeb, newPopulations, newNCascades)
+      }
+
+    val (newPopulationWeb, newPopulations, nCascades) = extinctionCascades(this.populationWeb, this.populations, 0)
+
+    val extinctPopulations = newPopulations.collect{case p if p.extinct => (p.species.id,p.id) }
+    val newManagementLandscape = this.managementLandscape.updatePersistentPopulations(extinctPopulations)
+
+    (this.copy(populations = newPopulations, populationWeb = newPopulationWeb, managementLandscape = newManagementLandscape) , nCascades)
+    
+  def extinctions(): (World,Int) =
+    // First extinguish populations that cannot subsist, then extinguish according to protection plan and then simulate the cascading secondary extinctions.
+    this.secondaryExtinctions()._1.primaryExtinctions().secondaryExtinctions()
+    
+  def getRealizedWeb: DefaultDirectedGraph[Species, DefaultEdge] =
+
+    val realizedWeb = DefaultDirectedGraph[Species, DefaultEdge](classOf[DefaultEdge])
+
+    this.populationWeb.vertexSet().asScala.foreach(
+      p =>{
+        populationWeb.outgoingEdgesOf(p).asScala.foreach(
+          link => {
+            val prey = populationWeb.getEdgeTarget(link)
+            val addedPredator = realizedWeb.addVertex(p.species)
+            val addedPrey = realizedWeb.addVertex(prey.species)
+            val newInteraction = realizedWeb.addEdge(p.species, prey.species, DefaultEdge())
+            newInteraction
+          }
+        )
+      }
+    )
+
+    realizedWeb
+
+object World:
+  
+  def apply(numberOfSpecies: Int, connectanceMetaWeb: Double, numberOfPopulations: Int, basalHomeRange: Double, numberOfProtectionPoles: Int, fractionProtected: Double, decayDistancePopulations: Double, rnd: Random): World =
+
+    val worldParameters = WorldParameters(numberOfSpecies, connectanceMetaWeb, numberOfPopulations, basalHomeRange, numberOfProtectionPoles, fractionProtected, decayDistancePopulations)
+
+    val metaWeb = generateMetaWeb(numberOfSpecies, connectanceMetaWeb, rnd, basalHomeRange)
+
+    val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, decayDistancePopulations)
+
+    val populationWeb = generatePopulationWeb(populations, metaWeb)
+
+    val numberOfManagementAreas = worldParameters.getNumberOfManagementAreas(basalHomeRange)
+    val numberOfProtectedAreas = worldParameters.getNumberOfProtectedAreas(numberOfManagementAreas, fractionProtected)
+    val managementLandscape = ManagementLandscape(numberOfManagementAreas, populations, rnd).applyProtectionPlan(numberOfProtectedAreas,numberOfProtectionPoles,rnd)
+
+    new World(populations, managementLandscape, metaWeb, populationWeb, worldParameters, rnd)
+
+
+  private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, rnd: Random, basalHomeRange: Double):
+  DefaultDirectedGraph[Species, DefaultEdge]  =
+
+
+    @tailrec
+    def rec(): DefaultDirectedGraph[Int, DefaultEdge] =
+
+      val nicheValues = Seq.fill(numberOfSpecies)(rnd.nextDouble()).sorted
+
+      // Feeding range from beta distribution. The species with the lowest niche value is set to be a basal species: feedingRange = 0
+      val beta = 0.5 / connectance - 1
+      val feedingRange =
+        nicheValues.zipWithIndex.map(
+          (n, i) => if i > 0 then n * BetaDistribution(1, beta).sample() else 0.0
+        )
+
+      // Feeding center is drawn from uniform distribution between the feeding range.
+      val feedingCenter =
+        feedingRange.zip(nicheValues).map(
+          (r, n) => {
+            rnd.between(0.5 * r, math.min(n, 1 - 0.5 * r))
+          }
+        )
+
+      // Instantiate an empty MetaWeb
+      val metaWeb = DefaultDirectedGraph[Int, DefaultEdge](classOf[DefaultEdge])
+
+      // Populate the meta web: if a species S1 is within the feeding range of a species S2 then S2 is a predator of S1.
+      val x = nicheValues.zipWithIndex.map {
+        (n, i) =>
+          feedingCenter.zip(feedingRange).zipWithIndex.map {
+            (f, j) =>
+              if n > f._1 - 0.5 * f._2 && n < f._1 + 0.5 * f._2 && i != j
+              then {
+                val addedPredator = metaWeb.addVertex(j)
+                val addedPrey = metaWeb.addVertex(i)
+                val newInteraction = metaWeb.addEdge(j, i, DefaultEdge())
+              }
+          }
+      }
+
+      val isConnected = ConnectivityInspector(metaWeb).isConnected
+
+      if !isConnected then rec() else {
+
+        val cyclesAll = KosarajuStrongConnectivityInspector(metaWeb).stronglyConnectedSets()
+
+        if cyclesAll.size() < numberOfSpecies then {
+
+          val cycles = cyclesAll.asScala.toSeq.collect { case c if c.size() > 1 => c.asScala }
+
+          val externalEnergyCycles = cycles.forall(
+            species => species.exists {
+              s => {
+                val preySet = metaWeb.outgoingEdgesOf(s).asScala.map(link => metaWeb.getEdgeTarget(link))
+                species.intersect(preySet).size > species.size + 1
+              }
+            }
+          )
+
+          if !externalEnergyCycles then rec() else {
+
+            val hasDuplicates =
+              metaWeb.vertexSet().asScala.map(
+                id => {
+                  val predators = metaWeb.incomingEdgesOf(id).asScala.map(link => metaWeb.getEdgeSource(link))
+                  val preys = metaWeb.outgoingEdgesOf(id).asScala.map(link => metaWeb.getEdgeTarget(link))
+                  (predators, preys)
+                }
+              ).size < numberOfSpecies
+            if !hasDuplicates then metaWeb else rec()
+          }
+
+        } else {
+          val hasDuplicates =
+            metaWeb.vertexSet().asScala.map(
+              id => {
+                val predators = metaWeb.incomingEdgesOf(id).asScala.map(link => metaWeb.getEdgeSource(link))
+                val preys = metaWeb.outgoingEdgesOf(id).asScala.map(link => metaWeb.getEdgeTarget(link))
+                (predators, preys)
+              }
+            ).size < numberOfSpecies
+
+          if !hasDuplicates then metaWeb else rec()
+        }
+      }
+
+    val metaWeb = rec()
+
+    val metaWebDef = DefaultDirectedGraph[Species, DefaultEdge](classOf[DefaultEdge])
+
+    metaWeb.vertexSet().asScala.foreach(
+      predatorId => {
+        val trophicLevel = Species.calculateTrophicLevel(predatorId, metaWeb)
+        val predator = Species(predatorId, trophicLevel, rnd, basalHomeRange)
+        // If the species was already added then the graph is left unchanged.
+        val addedPredator = metaWebDef.addVertex(predator)
+
+        metaWeb.outgoingEdgesOf(predatorId).asScala.toSeq.foreach {
+          link => {
+            val preyId = metaWeb.getEdgeTarget(link)
+            val trophicLevel = Species.calculateTrophicLevel(preyId, metaWeb)
+            val prey = Species(preyId, trophicLevel, rnd, basalHomeRange)
+            // If the species was already added then the graph is left unchanged.
+            val addedPrey = metaWebDef.addVertex(prey)
+            // If the interaction was already added then the graph is left unchanged.
+            val newInteraction = metaWebDef.addEdge(predator, prey, DefaultEdge())
+          }
+        }
+      }
+    )
+    metaWebDef
+
+  private def generatePopulations(metaWeb: DefaultDirectedGraph[Species, DefaultEdge], numberOfPopulations: Int, rnd: Random, lambda: Double): Seq[Population] =
+
+    val abundancesSum: Int = metaWeb.vertexSet().asScala.toSeq.map(s => s.abundance).sum.toInt
+    val conversionFactor: Double = numberOfPopulations / abundancesSum
+
+    @tailrec
+    def rec(populationSeq: Seq[Population], id: Int, species: Species, speciesAbundance: Int): Seq[Population] =
+
+      if populationSeq.size == speciesAbundance then populationSeq else {
+        val newPopulation = Population(id, species, populationSeq, rnd, lambda)
+        val newPopulationSeq = populationSeq :+ newPopulation
+        rec(newPopulationSeq, id + 1, species, speciesAbundance)
+      }
+
+    metaWeb.vertexSet().asScala.toSeq
+      .flatMap(
+        s => {
+          rec(Seq(), 0, s, (s.abundance * conversionFactor).toInt)
+        }
+      )
+
+  private def generatePopulationWeb(populations: Seq[Population], metaWeb: DefaultDirectedGraph[Species,DefaultEdge]):
+  DefaultDirectedGraph[Population,DefaultEdge] =
+
+    def interact(p1:Population,p2:Population): Boolean =
+      val point1 = GeometryFactory().createPoint(p1.coordinates)
+      val point2 = GeometryFactory().createPoint(p2.coordinates)
+      val distance = DistanceOp(point1, point2).distance()
+      distance < p1.species.homeRange + p2.species.homeRange
+
+    val interactingPopulations: Seq[(Population, Population)] = populations.toSet.subsets(2).collect {
+      case p if interact(p.head, p.last) => (p.head, p.last)
+    }.toSeq
+
+    val populationWeb = DefaultDirectedGraph[Population, DefaultEdge](classOf[DefaultEdge])
+
+    val interactions: Unit = interactingPopulations.foreach(
+      x => {
+        val p1 = x._1
+        val p2 = x._2
+        populationWeb.addVertex(p1)
+        populationWeb.addVertex(p2)
+
+        val s1preys = metaWeb.outgoingEdgesOf(p1.species).asScala.map{
+          link => metaWeb.getEdgeTarget(link)
+        }
+        val s2preys = metaWeb.outgoingEdgesOf(p2.species).asScala.map {
+          link => metaWeb.getEdgeTarget(link)
+        }
+
+        if s1preys.contains(p2.species)
+        then {
+          populationWeb.addEdge(p1, p2, DefaultEdge())
+        }
+        if s2preys.contains(p1.species)
+        then {
+          populationWeb.addEdge(p2, p1, DefaultEdge())
+        }
+      }
+    )
+
+    populationWeb
+    
+end World
+    
+

@@ -1,11 +1,11 @@
-package management.scales
+package network.conservation
 
 import org.locationtech.jts.geom.Coordinate
 
 import scala.util.Random
 
 case class Population(
-                      id: Long,
+                      id: Int,
                       species: Species,
                       coordinates: Coordinate,
                       extinct: Boolean
@@ -16,8 +16,8 @@ case class Population(
 
 object Population:
 
-  def apply(id: Long, species: Species, landscapeRadius: Double, rnd: Random): Population =
-    val coordinates: Coordinate = Utils.randomPoint(landscapeRadius, rnd)
+  def apply(id: Int, species: Species, populationSeq: Seq[Population], rnd: Random, lambda: Double): Population =
+    val coordinates: Coordinate = Utils.diskPacking(lambda,populationSeq,rnd,species)
     Population(id, species, coordinates, false)
 
 end Population
