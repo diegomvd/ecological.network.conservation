@@ -12,14 +12,31 @@ case class ManagementLandscape(
                                 managementAreas: Seq[ManagementArea]
                               ):
 
-  def applyProtectionPlan(numberOfProtectedAreas: Int, nProtectionPoles: Int, rnd: Random ): ManagementLandscape =
+  def applyProtectionPlan(totalArea: Double, connectivity: Double, rnd: Random ): ManagementLandscape =
+    /*
+    Protection plan to preserve maximum number of species.
+    */
+
+    @tailrec  
+    def protectionRecursion(areasSpeciesRichness: Map[Int,Int], areasConnectivity: Map[Int,Int]):
+      
+      val biodivConservationProbability = areasSpeciesRichness.map( x => (x._1, 1-math.exp(-x._2)) )
+      val connectivityConservationProbability = areasConnectivity( x => (x._1, 1-math.exp(-x._2)))
+
+      val totalConservationProbability = biodivConservationProbability.map(
+        bio => bio._2 + connectivity * connectivityConservationProbability.getOrElse(bio._1,0.0)
+      )
+
+      val cummulativeProbability(): 
+
+    val rankedAreas: Map[Int,Int] = managementAreas.sortWith( _.getSpeciesRichness < _.getSpeciesRichness).map(ma => (ma.id,ma.getSpeciesRichness)).toMap
+
+
 
     val shuffledAreas: Seq[ManagementArea] = rnd.shuffle(this.managementAreas)
     //rnd.shuffle( this.managementAreas.zipWithIndex.map(_.swap) )
 
-    val polesCoordinates = (0 until nProtectionPoles).map(
-      n => randomPoint(rnd)
-    )
+    
 
     val distanceToClosestPole: Seq[(ManagementArea,Double)] = shuffledAreas.map(
       a => {
@@ -47,15 +64,14 @@ case class ManagementLandscape(
 
 object ManagementLandscape:
 
-  def apply(numberOfAreas: Int, populations: Seq[Population], rnd: Random): ManagementLandscape =
+  def apply(landscapeRadius: Int, populations: Seq[Population], rnd: Random): ManagementLandscape =
 
-    val voronoiDiagram: Geometry = Utils.getVoronoiTesselation(numberOfAreas,rnd)
+    val landscapeGrid: Map[Int,Geometry] = HexagonalGrid(landscapeRadius,(0.0,0.0))
 
-    val managementAreas: List[ManagementArea] =
-      (0 until voronoiDiagram.getNumGeometries)
-        .map( n =>
-          ManagementArea(n, voronoiDiagram.getGeometryN(n), ProtectionStatus.Unprotected, populations
-            .collect { case p if GeometryFactory().createPoint(p.coordinates).within(voronoiDiagram.getGeometryN(n)) => (p.species.id, p.id) }.toMap)
+    val managementAreas: Seq[ManagementArea] =
+        landscapeGrid.map( n =>
+          ManagementArea(n._1, ProtectionStatus.Unprotected, populations
+            .collect { case p if GeometryFactory().createPoint(p.coordinates).within(n._2) => (p.id, p.species.id) }.toMap)
         )
         .toList
 
