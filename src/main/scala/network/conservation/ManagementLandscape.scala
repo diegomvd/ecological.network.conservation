@@ -1,6 +1,6 @@
 package network.conservation
 
-import org.locationtech.jts.geom.{Geometry, GeometryFactory}
+import org.locationtech.jts.geom.{Geometry, GeometryFactory, Polygon}
 import org.locationtech.jts.operation.distance.DistanceOp
 
 import scala.jdk.CollectionConverters.*
@@ -70,9 +70,7 @@ case class ManagementLandscape(
 
 object ManagementLandscape:
 
-  def apply(landscapeRadius: Int, populations: Seq[Population], rnd: Random): ManagementLandscape =
-
-    val landscapeGrid: Map[Int,Geometry] = HexagonalGrid(landscapeRadius)
+  def apply(landscapeGrid: Map[Int,Polygon], populations: Seq[Population], rnd: Random): ManagementLandscape =
 
     val managementAreas: Seq[ManagementArea] =
         landscapeGrid.map( n =>

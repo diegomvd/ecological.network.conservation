@@ -105,15 +105,15 @@ object World:
 
     val metaWeb = generateMetaWeb(numberOfSpecies, connectanceMetaWeb, rnd, basalHomeRange)
 
-    val tiledLandscape = HexagonalGrid(landscapeRadius) 
+    val landscapeGrid = HexagonalGrid(landscapeRadius) 
 
-    val landscapeBoundary = GeometryFactory().createMultiPolygon(tiledLandscape.values.toArray)
+    val landscapeBoundary = GeometryFactory().createMultiPolygon(landscapeGrid.values.toArray).getBoundary()
 
     val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, decayDistancePopulations, landscapeBoundary)
 
     val populationWeb = generatePopulationWeb(populations, metaWeb)
 
-    val managementLandscape = ManagementLandscape(landscapeRadius, populations, rnd).applyProtectionPlan(worldParameters,rnd)
+    val managementLandscape = ManagementLandscape(landscapeGrid, populations, rnd).applyProtectionPlan(worldParameters,rnd)
 
     new World(populations, managementLandscape, metaWeb, populationWeb, worldParameters, rnd)
 

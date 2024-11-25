@@ -4,7 +4,7 @@ import scala.math.max
 import scala.math.min
 import scala.math.sqrt
 
-import org.locationtech.jts.geom.{Coordinate, Envelope, Geometry, GeometryFactory, LinearRing, Point}
+import org.locationtech.jts.geom.{Coordinate, Envelope, Geometry, GeometryFactory, LinearRing, Point, Polygon}
 import org.locationtech.jts.geom.impl.CoordinateArraySequence
 
 /**
@@ -27,7 +27,7 @@ object HexagonalGrid:
   def apply(
              r:Int
            ):
-  Map[Int,Geometry]=
+  Map[Int,Polygon]=
     (0 until area(r)).map( id => (id, getHexGeometry(id,r)) ).toMap  
 
 
@@ -41,7 +41,7 @@ object HexagonalGrid:
     Coordinate(x, y)
   
 
-  def getHexGeometry(index: Int, radius: Int): Geometry =
+  def getHexGeometry(index: Int, radius: Int): Polygon =
     val cubic = HexagonalGrid.toCubic(mod=index,rad=radius)
 
     val center = cubicToCenterXY(cubic, radius)
