@@ -4,7 +4,8 @@ import scala.math.max
 import scala.math.min
 import scala.math.sqrt
 
-import org.locationtech.jts.geom.{Coordinate, Envelope, Geometry, GeometryFactory}
+import org.locationtech.jts.geom.{Coordinate, Envelope, Geometry, GeometryFactory, LinearRing, Point}
+import org.locationtech.jts.geom.impl.CoordinateArraySequence
 
 /**
  * Implementation of hexagonal modulo coordinates. Defines all the functions needed to manipulate the modulo coordinates
@@ -26,21 +27,36 @@ object HexagonalGrid:
   def apply(
              r:Int
            ):
-  Seq[Int]=
-    (0 until area(r)).map(x=>x).toList
-
-  def apply(
-             r:Int,origin:(Double,Double)
-           ):
   Map[Int,Geometry]=
-    // Do whatever to get the geometry map 
-    (0 until area(r)).map(x=>x).toList  
+    (0 until area(r)).map( id => (id, getHexGeometry(id,r)) ).toMap  
 
+
+  def cubicToCenterXY(cubic: (Int, Int), radius: Int): Coordinate =
+    val size = 1/(2*radius+1)
+    val SQRT3 = Math.sqrt(3.0)
+
+    val x = size * (SQRT3 * cubic._1 + SQRT3/2.0 * cubic._2)
+    val y = size * (0.0 * cubic._1 + 3.0/2.0 * cubic._2)
+    
+    Coordinate(x, y)
+  
 
   def getHexGeometry(index: Int, radius: Int): Geometry =
-    cubic = HexagonalGrid.toCubic(mod=index,rad=radius)
-    // from cubic can get the hexagon corners and build an hexagon
-    coordinates
+    val cubic = HexagonalGrid.toCubic(mod=index,rad=radius)
+
+    val center = cubicToCenterXY(cubic, radius)
+
+    val size = 1/(2*radius+1)
+      
+    // Generate corner coordinates
+    val coordinates = (0 to 6).map { i =>
+      val angle = Math.PI / 3.0 * i
+      new Coordinate(
+        center.x + size * Math.cos(angle),
+        center.y + size * Math.sin(angle)
+      )
+    }
+    
     val shell = new LinearRing(
         new CoordinateArraySequence(coordinates.toArray),
         geometryFactory
@@ -122,12 +138,12 @@ object HexagonalGrid:
                  rad:Int,
                  thr:Int
                ):
-  List[Int]=
+  Seq[Int]=
     val cub = toCubic(mod, rad)
     (-thr to thr).flatMap( q =>
       (max(-thr,-q-thr) to min(thr,-q+thr)).map( r =>
         toModulo((q+cub._1,r+cub._2),rad)
       )
-    ).toList
+    ).toSeq
 
 end HexagonalGrid

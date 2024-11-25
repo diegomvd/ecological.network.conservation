@@ -5,11 +5,12 @@ import org.jgrapht.*
 import org.jgrapht.graph.*
 import org.apache.commons.math3.distribution.BetaDistribution
 import org.jgrapht.alg.connectivity.{ConnectivityInspector,KosarajuStrongConnectivityInspector}
-import org.locationtech.jts.geom.GeometryFactory
+import org.locationtech.jts.geom.{GeometryFactory,MultiPolygon}
 import org.locationtech.jts.operation.distance.DistanceOp
 
 import scala.annotation.tailrec
 import scala.jdk.CollectionConverters.*
+import org.locationtech.jts.geom.Geometry
 
 case class World(populations: Seq[Population], managementLandscape: ManagementLandscape, metaWeb: DefaultDirectedGraph[Species, DefaultEdge], populationWeb: DefaultDirectedGraph[Population, DefaultEdge], worldParameters: WorldParameters, rnd: Random):
 
@@ -88,19 +89,31 @@ case class World(populations: Seq[Population], managementLandscape: ManagementLa
 
 object World:
   
-  def apply(numberOfSpecies: Int, connectanceMetaWeb: Double, numberOfPopulations: Int, basalHomeRange: Double, numberOfProtectionPoles: Int, fractionProtected: Double, decayDistancePopulations: Double, rnd: Random): World =
+  def apply(
+    numberOfSpecies: Int,
+    connectanceMetaWeb: Double,
+    numberOfPopulations: Int,
+    basalHomeRange: Double,
+    landscapeRadius: Int,
+    fractionProtected: Double,
+    connectivity: Double, 
+    decayDistancePopulations: Double,
+    rnd: Random
+  ): World =
 
-    val worldParameters = WorldParameters(numberOfSpecies, connectanceMetaWeb, numberOfPopulations, basalHomeRange, numberOfProtectionPoles, fractionProtected, decayDistancePopulations)
+    val worldParameters = WorldParameters(numberOfSpecies, connectanceMetaWeb, numberOfPopulations, basalHomeRange, landscapeRadius, fractionProtected, connectivity, decayDistancePopulations)
 
     val metaWeb = generateMetaWeb(numberOfSpecies, connectanceMetaWeb, rnd, basalHomeRange)
 
-    val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, decayDistancePopulations)
+    val tiledLandscape = HexagonalGrid(landscapeRadius) 
+
+    val landscapeBoundary = GeometryFactory().createMultiPolygon(tiledLandscape.values.toArray)
+
+    val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, decayDistancePopulations, landscapeBoundary)
 
     val populationWeb = generatePopulationWeb(populations, metaWeb)
 
-    val numberOfManagementAreas = worldParameters.getNumberOfManagementAreas(basalHomeRange)
-    val numberOfProtectedAreas = worldParameters.getNumberOfProtectedAreas(numberOfManagementAreas, fractionProtected)
-    val managementLandscape = ManagementLandscape(numberOfManagementAreas, populations, rnd).applyProtectionPlan(numberOfProtectedAreas,numberOfProtectionPoles,rnd)
+    val managementLandscape = ManagementLandscape(landscapeRadius, populations, rnd).applyProtectionPlan(worldParameters,rnd)
 
     new World(populations, managementLandscape, metaWeb, populationWeb, worldParameters, rnd)
 
@@ -218,7 +231,7 @@ object World:
     )
     metaWebDef
 
-  private def generatePopulations(metaWeb: DefaultDirectedGraph[Species, DefaultEdge], numberOfPopulations: Int, rnd: Random, lambda: Double): Seq[Population] =
+  private def generatePopulations(metaWeb: DefaultDirectedGraph[Species, DefaultEdge], numberOfPopulations: Int, rnd: Random, lambda: Double, landscapeBoundary: Geometry): Seq[Population] =
 
     val abundancesSum: Int = metaWeb.vertexSet().asScala.toSeq.map(s => s.abundance).sum.toInt
     val conversionFactor: Double = numberOfPopulations / abundancesSum
@@ -227,7 +240,7 @@ object World:
     def rec(populationSeq: Seq[Population], id: Int, species: Species, speciesAbundance: Int): Seq[Population] =
 
       if populationSeq.size == speciesAbundance then populationSeq else {
-        val newPopulation = Population(id, species, populationSeq, rnd, lambda)
+        val newPopulation = Population(id, species, populationSeq, rnd, lambda, landscapeBoundary)
         val newPopulationSeq = populationSeq :+ newPopulation
         rec(newPopulationSeq, id + 1, species, speciesAbundance)
       }

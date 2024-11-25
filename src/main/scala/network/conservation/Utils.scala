@@ -20,7 +20,14 @@ object Utils:
   private def exponentialDistribution(lambda: Double, rnd: Random): Double =
     math.log(1 - rnd.nextDouble()) / (-lambda)
 
-  private def drawPopulationCoordinates(referenceCoordinate: Coordinate, lambda: Double, rnd: Random, homeRange: Double): (Double, Double) =
+  @tailrec    
+  private def drawPopulationCoordinates(
+    referenceCoordinate: Coordinate,
+    lambda: Double,
+    rnd: Random,
+    homeRange: Double,
+    landscapeBoundary: Geometry
+  ): Coordinate =
     // First pick an angle with uniform probability
     val angle = rnd.nextDouble()*math.Pi*2.0
     // Now pick a distance from an exponential distribution and starting at twice the species' home range
@@ -29,28 +36,18 @@ object Utils:
     val x = referenceCoordinate.x + distance*math.cos(angle)
     val y = referenceCoordinate.y + distance*math.sin(angle)
 
-    (x, y)
+    val coordinate = Coordinate(x,y)  
+    if landscapeBoundary.contains(GeometryFactory().createPoint(coordinate)) then 
+      coordinate 
+    else
+      drawPopulationCoordinates(referenceCoordinate,lambda,rnd,homeRange,landscapeBoundary)
 
-  private def correctOutOfBoundsCoordinate(z: Double): Double =
-    if z>1.0 then{
-      1.0
-    } else {
-      if z<0.0 then{
-        0.0
-      } else z
-    }
-
-  def euclidianDistance(c1: Coordinate, c2: Coordinate): Double =
+  private def euclidianDistance(c1: Coordinate, c2: Coordinate): Double =
     val point1 = GeometryFactory().createPoint(c1)
     val point2 = GeometryFactory().createPoint(c2)
     DistanceOp(point1, point2).distance()
 
-  private def correctOutOfBoundCoordinate(x: Double, y: Double): Coordinate =
-    val xx = correctOutOfBoundsCoordinate(x)
-    val yy = correctOutOfBoundsCoordinate(y)
-    Coordinate(xx,yy)
-
-  def diskPacking(lambda: Double, populationSeq: Seq[Population], rnd: Random, species: Species): Coordinate =
+  def diskPacking(lambda: Double, populationSeq: Seq[Population], rnd: Random, species: Species, landscapeBoundary: Geometry): Coordinate =
 
     val speciesHomeRange = species.homeRange
 
@@ -63,8 +60,7 @@ object Utils:
       // Pick a population at random and get its location
       val referenceCoordinate: Coordinate = getReferenceCoordinate(populationSeq, rnd)
 
-      val (x, y) = drawPopulationCoordinates(referenceCoordinate,lambdaRec,rnd,speciesHomeRange)
-      val newCoordinate = correctOutOfBoundCoordinate(x,y)
+      val newCoordinate = drawPopulationCoordinates(referenceCoordinate,lambdaRec,rnd,speciesHomeRange,landscapeBoundary)
 
       // Now check that this population does not overlap with another one.
       val noOverlap: Boolean = populationSeq.forall{
@@ -93,5 +89,23 @@ object Utils:
     vDB.setSites(sites)
     vDB.setClipEnvelope(Envelope(0.0, 1.0, 0.0, 1.0))
     vDB.getDiagram(GeometryFactory())
+
+
+  def chooseStochasticEvent(probabilityMap: Map[Int,Double],rnd: Random): Int =
+    
+    val rankedProbabilities: Map[Int,Double] = probabilityMap.toSeq.sortWith(_._2 > _._2).toMap
+
+    val cummulativeProbability: Map[Int,Double] = 
+      probabilityMap.scanLeft((0,0.0)){
+        case ((_,preProb),(tile,prob)) => (tile, preProb + prob)
+      }.toMap
+
+    val totalProb: Double = cummulativeProbability.last._2 
+
+    val normalizedCumProbability: Map[Int, Double] = cummulativeProbability.map(p => (p._1, p._2/totalProb))
+
+    val dice = rnd.nextDouble()
+    
+    normalizedCumProbability.find(p => p._2 < dice).getOrElse(-1,0.0)._1
 
 end Utils

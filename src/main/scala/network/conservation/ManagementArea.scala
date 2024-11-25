@@ -14,8 +14,10 @@ case class ManagementArea(id: Int, status: ProtectionStatus, populations: Map[In
     this.copy(status = ProtectionStatus.Protected)
     
   def primaryExtinctions(worldParameters: WorldParameters, rnd: Random): Map[Int,Int] =
+    
+    val dice = rnd.nextDouble()
     this.populations.collect {
-      case p if rnd.nextDouble() < worldParameters.extinctionProbability(status) => (p._1, p._2)
+      case p if dice < worldParameters.extinctionProbability(status) => (p._1, p._2)
     }
 
   def updatePersistentPopulations(extinctPopulations: Seq[(Int,Int)]): ManagementArea =
@@ -24,10 +26,10 @@ case class ManagementArea(id: Int, status: ProtectionStatus, populations: Map[In
     }
     this.copy(populations=updatedPopulations)
 
-  def getSpecies:
-    this.populations.values.toSet 
+  def getSpecies=
+    this.populations.values.toSet
 
-  def getSpeciesRichness:
+  def getSpeciesRichness=
     this.getSpecies.size 
 
     
