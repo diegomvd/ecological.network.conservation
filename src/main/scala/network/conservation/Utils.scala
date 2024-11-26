@@ -36,7 +36,9 @@ object Utils:
     val x = referenceCoordinate.x + distance*math.cos(angle)
     val y = referenceCoordinate.y + distance*math.sin(angle)
 
-    val coordinate = Coordinate(x,y)  
+    val coordinate = Coordinate(x,y)
+    val containsPoint = landscapeBoundary.contains(GeometryFactory().createPoint(coordinate))  
+    val containsOrigin = landscapeBoundary.contains(GeometryFactory().createPoint(Coordinate(0,0)))
     if landscapeBoundary.contains(GeometryFactory().createPoint(coordinate)) then 
       coordinate 
     else

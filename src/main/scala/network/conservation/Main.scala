@@ -7,11 +7,11 @@ object Main extends App:
   // Initialize the World parameters
   private val parameters = 
     WorldParameters(
-      numberOfSpecies = 50,
+      numberOfSpecies = 10,
       connectanceMetaWeb = 0.2,
-      numberOfPopulations = 2000,
+      numberOfPopulations = 102,
       basalHomeRange = 0.01,
-      landscapeRadius = 1,
+      landscapeRadius = 3,
       fractionProtected = 0.3,
       connectivity = 0.0,
       decayDistancePopulations = 100000)

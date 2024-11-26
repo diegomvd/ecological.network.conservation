@@ -5,7 +5,7 @@ import org.jgrapht.*
 import org.jgrapht.graph.*
 import org.apache.commons.math3.distribution.BetaDistribution
 import org.jgrapht.alg.connectivity.{ConnectivityInspector,KosarajuStrongConnectivityInspector}
-import org.locationtech.jts.geom.{GeometryFactory,MultiPolygon}
+import org.locationtech.jts.geom.{GeometryFactory,MultiPolygon,Coordinate}
 import org.locationtech.jts.operation.distance.DistanceOp
 
 import scala.annotation.tailrec
@@ -107,8 +107,12 @@ object World:
 
     val landscapeGrid = HexagonalGrid(landscapeRadius) 
 
+    val coordinate = Coordinate(0.1,0.1)
+    val loop = landscapeGrid.foreach(x => println(x._2.contains(GeometryFactory().createPoint(coordinate))))
+
     val landscapeBoundary = GeometryFactory().createMultiPolygon(landscapeGrid.values.toArray).getBoundary()
 
+    val boundary  = landscapeBoundary.contains(GeometryFactory().createPoint(coordinate))
     val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, decayDistancePopulations, landscapeBoundary)
 
     val populationWeb = generatePopulationWeb(populations, metaWeb)

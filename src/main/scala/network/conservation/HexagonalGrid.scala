@@ -31,12 +31,13 @@ object HexagonalGrid:
     (0 until area(r)).map( id => (id, getHexGeometry(id,r)) ).toMap  
 
 
-  def cubicToCenterXY(cubic: (Int, Int), radius: Int): Coordinate =
-    val size = 1/(2*radius+1)
+  def cubicToCenterXY(cubic: (Long, Long), radius: Long): Coordinate =
+    val centerToLat: Double = 1.0/(2.0*radius+1.0).toDouble
     val SQRT3 = Math.sqrt(3.0)
 
-    val x = size * (SQRT3 * cubic._1 + SQRT3/2.0 * cubic._2)
-    val y = size * (0.0 * cubic._1 + 3.0/2.0 * cubic._2)
+    // CHANGE THIS BECAUSE IT IS FOR POINTY GEOM, WE DO FLAT  
+    val x = centerToLat * (SQRT3 * cubic._1 + SQRT3/2.0 * cubic._2)
+    val y = centerToLat * (0.0 * cubic._1 + 3.0/2.0 * cubic._2)
     
     Coordinate(x, y)
   
@@ -46,19 +47,23 @@ object HexagonalGrid:
 
     val center = cubicToCenterXY(cubic, radius)
 
-    val size = 1/(2*radius+1)
-      
+    val centerToLat: Double = 1.0/(2.0*radius+1.0).toDouble
+    
+    val SQRT3 = Math.sqrt(3.0)
+    val centerToCorner: Double = centerToLat*SQRT3*0.5
+
     // Generate corner coordinates
-    val coordinates = (0 to 6).map { i =>
+    val coordinates = (0L to 5L).map { i =>
       val angle = Math.PI / 3.0 * i
       new Coordinate(
-        center.x + size * Math.cos(angle),
-        center.y + size * Math.sin(angle)
+        center.x + centerToCorner * Math.cos(angle),
+        center.y + centerToCorner * Math.sin(angle)
       )
     }
-    
+    val coordinatesClosed = coordinates.appended(coordinates.head)
+  
     val shell = new LinearRing(
-        new CoordinateArraySequence(coordinates.toArray),
+        new CoordinateArraySequence(coordinatesClosed.toArray),
         geometryFactory
       )  
     geometryFactory.createPolygon(shell)
@@ -90,10 +95,10 @@ object HexagonalGrid:
    * @return a tuple containing the cubic coordinates
    * */
   def toCubic(
-               mod:Int,
-               rad:Int
+               mod:Long,
+               rad:Long
              ):
-  (Int,Int)=
+  (Long,Long)=
     // helper values
     val shift = 3*rad + 2
     val ms = (mod + rad) / shift
@@ -113,10 +118,10 @@ object HexagonalGrid:
    * @return the modulo coordinate
    * */
   def toModulo(
-                cub:(Int,Int),
-                rad:Int
+                cub:(Long,Long),
+                rad:Long
               ):
-  Int=
+  Long=
     // helper values
     val area = 3*rad*rad + 3*rad + 1
     val shift = 3*rad + 2
@@ -134,11 +139,11 @@ object HexagonalGrid:
    * @return a List with the modulo coordinates of the neighbors.
    * */
   def neighbors(
-                 mod:Int,
-                 rad:Int,
-                 thr:Int
+                 mod:Long,
+                 rad:Long,
+                 thr:Long
                ):
-  Seq[Int]=
+  Seq[Long]=
     val cub = toCubic(mod, rad)
     (-thr to thr).flatMap( q =>
       (max(-thr,-q-thr) to min(thr,-q+thr)).map( r =>

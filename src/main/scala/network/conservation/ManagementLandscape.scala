@@ -19,7 +19,7 @@ case class ManagementLandscape(
     */
 
     def updateConnectivity(areasConnectivity: Map[Int,Int], tileId: Int): Map[Int,Int] =
-      val neighbors: Seq[Int] = HexagonalGrid.neighbors(tileId,HexagonalGrid.radius(this.managementAreas.size),1)
+      val neighbors: Seq[Long] = HexagonalGrid.neighbors(tileId,HexagonalGrid.radius(this.managementAreas.size),1)
       val newConnectivity: Map[Int,Int] = areasConnectivity.collect{
         case x if neighbors.contains(x._1) => (x._1,x._2+1)
       }.toMap.removed(tileId)
