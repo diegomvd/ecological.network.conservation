@@ -11,6 +11,7 @@ import org.locationtech.jts.operation.distance.DistanceOp
 import scala.annotation.tailrec
 import scala.jdk.CollectionConverters.*
 import org.locationtech.jts.geom.Geometry
+import org.locationtech.jts.geom.Polygon
 
 case class World(populations: Seq[Population], managementLandscape: ManagementLandscape, metaWeb: DefaultDirectedGraph[Species, DefaultEdge], populationWeb: DefaultDirectedGraph[Population, DefaultEdge], worldParameters: WorldParameters, rnd: Random):
 
@@ -20,15 +21,16 @@ case class World(populations: Seq[Population], managementLandscape: ManagementLa
       this.managementLandscape.managementAreas.flatMap(a => a.primaryExtinctions(this.worldParameters, this.rnd))
 
     val extinguishVertices = populationWeb.vertexSet().asScala.collect {
-      case p if extinguishIds.contains( (p.species.id,p.id) ) => p
+      case p if extinguishIds.contains( (p.id,p.species.id) ) => p
     }
 
     val newPopulationWeb: Boolean = populationWeb.removeAllVertices(extinguishVertices.asJavaCollection)
-
+     
     // If this is slow consider making populations a Map[Id,Pop]
-    val newPopulations = populations.map( p => if extinguishIds.contains((p.species.id,p.id)) then p.extinguish else p )
+    val newPopulations = populations.map( p => if extinguishIds.contains((p.id,p.species.id)) then p.extinguish else p )
 
-    val extinctPopulations = newPopulations.collect { case p if p.extinct => (p.species.id, p.id) }
+    val extinctPopulations = newPopulations.collect { case p if p.extinct => (p.id,p.species.id) }
+    
     val newManagementLandscape = this.managementLandscape.updatePersistentPopulations(extinctPopulations)
 
     this.copy(populations = newPopulations, populationWeb = populationWeb, managementLandscape = newManagementLandscape)
@@ -107,19 +109,42 @@ object World:
 
     val landscapeGrid = HexagonalGrid(landscapeRadius) 
 
-    val coordinate = Coordinate(0.1,0.1)
-    val loop = landscapeGrid.foreach(x => println(x._2.contains(GeometryFactory().createPoint(coordinate))))
+    val landscapeBoundary = {
+      // First create array of validated individual polygons
+      val validPolygons = landscapeGrid.values.map { poly =>
+        if (!poly.isValid) {
+          // Try to fix with buffer(0)
+          poly.buffer(0).asInstanceOf[Polygon]
+        } else poly
+      }.toArray
 
-    val landscapeBoundary = GeometryFactory().createMultiPolygon(landscapeGrid.values.toArray).getBoundary()
+      // Create and validate MultiPolygon
+      val multiPoly = GeometryFactory().createMultiPolygon(validPolygons)
+      
+      // Try to fix invalid MultiPolygon if needed
+      if (!multiPoly.isValid) {
+        multiPoly.buffer(0)
+      } else multiPoly
+    }
 
-    val boundary  = landscapeBoundary.contains(GeometryFactory().createPoint(coordinate))
+    println("Generating populations.")
+
     val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, decayDistancePopulations, landscapeBoundary)
+
+    println("Generating interaction network.")
 
     val populationWeb = generatePopulationWeb(populations, metaWeb)
 
-    val managementLandscape = ManagementLandscape(landscapeGrid, populations, rnd).applyProtectionPlan(worldParameters,rnd)
+    println("Removing isolated populations.")
+  
+    // Update populations given that the non interacting ones are removed from the network
+    val populationsInit = populationWeb.vertexSet().asScala.toSeq
 
-    new World(populations, managementLandscape, metaWeb, populationWeb, worldParameters, rnd)
+    println("Creating management landscape.")
+    val managementLandscape = ManagementLandscape(landscapeGrid, populationsInit, rnd).applyProtectionPlan(worldParameters,rnd)
+
+    println("Initializing world.")
+    new World(populationsInit, managementLandscape, metaWeb, populationWeb, worldParameters, rnd)
 
 
   private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, rnd: Random, basalHomeRange: Double):
@@ -235,26 +260,42 @@ object World:
     )
     metaWebDef
 
-  private def generatePopulations(metaWeb: DefaultDirectedGraph[Species, DefaultEdge], numberOfPopulations: Int, rnd: Random, lambda: Double, landscapeBoundary: Geometry): Seq[Population] =
-
-    val abundancesSum: Int = metaWeb.vertexSet().asScala.toSeq.map(s => s.abundance).sum.toInt
+  private def generatePopulations(
+    metaWeb: DefaultDirectedGraph[Species, DefaultEdge], 
+    numberOfPopulations: Int, 
+    rnd: Random, 
+    lambda: Double, 
+    landscapeBoundary: Geometry
+  ): Seq[Population] = {
+    val abundancesSum: Double = metaWeb.vertexSet().asScala.toSeq.map(s => s.abundance).sum
     val conversionFactor: Double = numberOfPopulations / abundancesSum
 
-    @tailrec
-    def rec(populationSeq: Seq[Population], id: Int, species: Species, speciesAbundance: Int): Seq[Population] =
-
-      if populationSeq.size == speciesAbundance then populationSeq else {
-        val newPopulation = Population(id, species, populationSeq, rnd, lambda, landscapeBoundary)
-        val newPopulationSeq = populationSeq :+ newPopulation
-        rec(newPopulationSeq, id + 1, species, speciesAbundance)
-      }
-
+    // Fold over the species, tracking both populations and the next available ID
     metaWeb.vertexSet().asScala.toSeq
-      .flatMap(
-        s => {
-          rec(Seq(), 0, s, (s.abundance * conversionFactor).toInt)
+      .foldLeft((Seq.empty[Population], 0)) { case ((populationSeq, currentId), species) => 
+        @tailrec
+        def rec(
+          populationSeq: Seq[Population], 
+          id: Int, 
+          species: Species, 
+          speciesAbundance: Int
+        ): (Seq[Population], Int) = {
+          if (populationSeq.size == speciesAbundance) 
+            (populationSeq, id)
+          else {
+            val newPopulation = Population(id, species, populationSeq, rnd, lambda, landscapeBoundary)
+            val newPopulationSeq = populationSeq :+ newPopulation
+            rec(newPopulationSeq, id + 1, species, speciesAbundance)
+          }
         }
-      )
+
+        // Ensure we generate the correct number of populations
+        val speciesAbundance = math.max(1, (species.abundance * conversionFactor).toInt)
+        val (newPopulationSeq, nextId) = rec(Seq(), currentId, species, speciesAbundance)
+        
+        (populationSeq ++ newPopulationSeq, nextId)
+      }._1  // Return only the populations
+  }
 
   private def generatePopulationWeb(populations: Seq[Population], metaWeb: DefaultDirectedGraph[Species,DefaultEdge]):
   DefaultDirectedGraph[Population,DefaultEdge] =
@@ -265,6 +306,7 @@ object World:
       val distance = DistanceOp(point1, point2).distance()
       distance < p1.species.homeRange + p2.species.homeRange
 
+    // From scratch filter out all the popoulations that do not have any interaction. 
     val interactingPopulations: Seq[(Population, Population)] = populations.toSet.subsets(2).collect {
       case p if interact(p.head, p.last) => (p.head, p.last)
     }.toSeq
