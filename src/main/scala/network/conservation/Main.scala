@@ -7,12 +7,12 @@ object Main extends App:
   // Initialize the World parameters
   private val parameters = 
     WorldParameters(
-      numberOfSpecies = 10,
+      numberOfSpecies = 50,
       connectanceMetaWeb = 0.2,
-      numberOfPopulations = 102,
+      numberOfPopulations = 1000,
       basalHomeRange = 0.01,
       landscapeRadius = 3,
-      fractionProtected = 0.3,
+      fractionProtected = 0.7,
       connectivity = 0.0,
       decayDistancePopulations = 100000)
 
@@ -29,6 +29,8 @@ object Main extends App:
     rnd = Random(12L)
   )
 
+  println("Finished init")
+
   private val metaWeb = initialWorld.metaWeb
   val nSpeciesMeta = metaWeb.vertexSet().size()
   println(nSpeciesMeta)
@@ -38,13 +40,15 @@ object Main extends App:
   println(connectanceMeta)
   println(".---------------------.")
 
+  private val finalWorldPre = initialWorld.primaryExtinctions()
+
   // Perform the simulation
   // val (finalWorld, nCascades) = initialWorld.extinctions()
   private val (finalWorld, nCascades) = initialWorld.secondaryExtinctions()
 
   //println(nCascades)
   // Recover realized Web
-  val finalMetaWeb = finalWorld.getRealizedWeb
+  val finalMetaWeb = finalWorldPre.getRealizedWeb
 
   val nSpecies = finalMetaWeb.vertexSet().size()
   println(nSpecies)
