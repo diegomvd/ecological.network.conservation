@@ -37,4 +37,8 @@ build/
 ### Mac OS ###
 .DS_Store
 
+<<<<<<< HEAD
+.bloop/
+=======
 .metals/
+>>>>>>> master

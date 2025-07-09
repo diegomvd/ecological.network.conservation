@@ -4,15 +4,20 @@ import org.locationtech.jts.geom.Geometry
 
 import scala.util.Random
 
-case class ManagementArea(id: Int, shape: Geometry, status: ProtectionStatus, populations: Map[Int, Int]):
+case class ManagementArea(id: Int, status: ProtectionStatus, populations: Map[Int, Int]):
   
+  /*
+  The Populations map p is such that: p._1 refers to population Id and p._2 is the species Id
+  */
+
   def updateProtectionStatus(): ManagementArea =
     this.copy(status = ProtectionStatus.Protected)
     
   def primaryExtinctions(worldParameters: WorldParameters, rnd: Random): Map[Int,Int] =
-    this.populations.collect {
+    val extinctPopulations = this.populations.collect {
       case p if rnd.nextDouble() < worldParameters.extinctionProbability(status) => (p._1, p._2)
     }
+    extinctPopulations
 
   def updatePersistentPopulations(extinctPopulations: Seq[(Int,Int)]): ManagementArea =
     val updatedPopulations = populations.collect{
@@ -20,7 +25,11 @@ case class ManagementArea(id: Int, shape: Geometry, status: ProtectionStatus, po
     }
     this.copy(populations=updatedPopulations)
 
+  def getSpecies=
+    this.populations.values.toSet
 
+  def getSpeciesRichness=
+    this.getSpecies.size 
 
     
 

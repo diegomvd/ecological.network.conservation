@@ -5,7 +5,16 @@ import scala.util.Random
 object Main extends App:
 
   // Initialize the World parameters
-  private val parameters = WorldParameters(numberOfSpecies = 50, connectanceMetaWeb = 0.2, numberOfPopulations = 2000, basalHomeRange = 0.01, numberOfProtectionPoles = 1, fractionProtected = 0.3, decayDistancePopulations = 100000)
+  private val parameters = 
+    WorldParameters(
+      numberOfSpecies = 50,
+      connectanceMetaWeb = 0.2,
+      numberOfPopulations = 1000,
+      basalHomeRange = 0.01,
+      landscapeRadius = 3,
+      fractionProtected = 0.7,
+      connectivity = 0.0,
+      decayDistancePopulations = 100000)
 
   // Initialize the World
   private val initialWorld = World(
@@ -13,11 +22,14 @@ object Main extends App:
     connectanceMetaWeb = parameters.connectanceMetaWeb,
     numberOfPopulations = parameters.numberOfPopulations,
     basalHomeRange = parameters.basalHomeRange,
-    numberOfProtectionPoles = parameters.numberOfProtectionPoles,
+    landscapeRadius = parameters.landscapeRadius,
     fractionProtected = parameters.fractionProtected,
+    connectivity = parameters.connectivity,
     decayDistancePopulations = parameters.decayDistancePopulations,
     rnd = Random(12L)
   )
+
+  println("Finished init")
 
   private val metaWeb = initialWorld.metaWeb
   val nSpeciesMeta = metaWeb.vertexSet().size()
@@ -28,13 +40,15 @@ object Main extends App:
   println(connectanceMeta)
   println(".---------------------.")
 
+  private val finalWorldPre = initialWorld.primaryExtinctions()
+
   // Perform the simulation
   // val (finalWorld, nCascades) = initialWorld.extinctions()
   private val (finalWorld, nCascades) = initialWorld.secondaryExtinctions()
 
   //println(nCascades)
   // Recover realized Web
-  val finalMetaWeb = finalWorld.getRealizedWeb
+  val finalMetaWeb = finalWorldPre.getRealizedWeb
 
   val nSpecies = finalMetaWeb.vertexSet().size()
   println(nSpecies)
