@@ -32,42 +32,49 @@ object HexagonalGrid:
 
 
   def cubicToCenterXY(cubic: (Long, Long), radius: Long): Coordinate =
-    val centerToLat: Double = 1.0/(2.0*radius+1.0).toDouble
-    val SQRT3 = Math.sqrt(3.0)
-
-    // CHANGE THIS BECAUSE IT IS FOR POINTY GEOM, WE DO FLAT  
-    val x = centerToLat * (SQRT3 * cubic._1 + SQRT3/2.0 * cubic._2)
-    val y = centerToLat * (0.0 * cubic._1 + 3.0/2.0 * cubic._2)
+    // First convert to "natural" hex coordinates
+    val q = cubic._1
+    val r = cubic._2
     
-    Coordinate(x, y)
-  
+    // Convert to cartesian coordinates (traditional hex layout)
+    val x = q * 2.0  // Horizontal spacing
+    val y = (r + q/2.0) * sqrt(3.0)  // Vertical spacing with offset
+    
+    // Calculate scaling to normalize to [0,1] × [0,sqrt(3)/2]
+    val maxExtent = 2.0 * radius + 1.0  // Maximum extent in hex units
+    val scale = 1.0 / maxExtent
+    
+    // Center and scale the coordinates
+    val normalizedX = (x * scale + 1.0) / 2.0
+    val normalizedY = (y * scale + sqrt(3.0)/2.0) / 2.0
+    
+    Coordinate(normalizedX, normalizedY, 0.0)
 
   def getHexGeometry(index: Int, radius: Int): Polygon =
     val cubic = HexagonalGrid.toCubic(mod=index,rad=radius)
-
     val center = cubicToCenterXY(cubic, radius)
-
-    val centerToLat: Double = 1.0/(2.0*radius+1.0).toDouble
     
-    val SQRT3 = Math.sqrt(3.0)
-    val centerToCorner: Double = centerToLat*SQRT3*0.5
-
-    // Generate corner coordinates
-    val coordinates = (0L to 5L).map { i =>
+    // Calculate hex size in normalized coordinates
+    val maxExtent = 2.0 * radius + 1.0
+    val hexSize = 1.0 / maxExtent  // Size in normalized coordinates
+    
+    // Create vertices in clockwise order, scaling the hex appropriately
+    val coordinates = (5L to 0L by -1).map { i =>
       val angle = Math.PI / 3.0 * i
       new Coordinate(
-        center.x + centerToCorner * Math.cos(angle),
-        center.y + centerToCorner * Math.sin(angle)
+        center.x + hexSize * Math.cos(angle) / sqrt(3.0),
+        center.y + hexSize * Math.sin(angle) / sqrt(3.0),
+        0.0
       )
     }
     val coordinatesClosed = coordinates.appended(coordinates.head)
-  
+
     val shell = new LinearRing(
-        new CoordinateArraySequence(coordinatesClosed.toArray),
-        geometryFactory
-      )  
+      new CoordinateArraySequence(coordinatesClosed.toArray),
+      geometryFactory
+    )  
     geometryFactory.createPolygon(shell)
-    
+      
 
   /**
    * Calculates area of an hexagonal landscape given its radius
