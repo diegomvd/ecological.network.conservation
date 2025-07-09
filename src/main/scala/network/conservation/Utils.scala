@@ -9,13 +9,301 @@ import org.locationtech.jts.operation.distance.DistanceOp
 import scala.annotation.tailrec
 import scala.language.postfixOps
 import scala.util.Random
+import scala.math.sqrt
+
 
 object Utils:
+
+  case class GridCell(x: Int, y: Int)
+  
+  def fastDiskPacking(
+    lambda: Double, 
+    populationSeq: Seq[Population], 
+    rnd: Random, 
+    species: Species, 
+    landscapeBoundary: Geometry
+  ): Coordinate =
+    // Domain is normalized to [0,1] × [0,sqrt(3)/2]
+    val width = 1.0
+    val height = width * sqrt(3.0)/2.0
+    
+    // Scale home range to normalized coordinates
+    val homeRange = species.homeRange
+    val cellSize = 1.8 * homeRange
+    
+    // Number of grid cells for spatial indexing
+    val nCellsX = math.max(1, (width / cellSize).toInt)
+    val nCellsY = math.max(1, (height / cellSize).toInt)
+    
+    case class GridCell(x: Int, y: Int)
+    val gridIndex = scala.collection.mutable.Map[GridCell, scala.collection.mutable.ArrayBuffer[Population]]()
+    
+    def getGridCell(coord: Coordinate): GridCell =
+      GridCell(
+        ((coord.x / width) * nCellsX).toInt,
+        ((coord.y / height) * nCellsY).toInt
+      )
+        
+    // Initialize index with existing populations of same species
+    populationSeq.filter(_.species == species).foreach { pop =>
+      val cell = getGridCell(pop.coordinates)
+      if (!gridIndex.contains(cell)) 
+        gridIndex(cell) = scala.collection.mutable.ArrayBuffer[Population]()
+      gridIndex(cell) += pop
+    }
+    
+    def getImmediateNeighbors(cell: GridCell): Array[GridCell] =
+      Array(
+        GridCell(cell.x + 1, cell.y),
+        GridCell(cell.x - 1, cell.y),
+        GridCell(cell.x, cell.y + 1),
+        GridCell(cell.x, cell.y - 1),
+        GridCell(cell.x + 1, cell.y + 1),
+        GridCell(cell.x - 1, cell.y - 1)
+      ).filter(c => 
+        c.x >= 0 && c.x < nCellsX && 
+        c.y >= 0 && c.y < nCellsY
+      )
+    
+    def quickValidityCheck(coord: Coordinate): Boolean =
+      if (!landscapeBoundary.contains(GeometryFactory().createPoint(coord))) 
+        false
+      else
+        val cell = getGridCell(coord)
+        if (cell.x < 0 || cell.x >= nCellsX || cell.y < 0 || cell.y >= nCellsY)
+          false
+        else {
+          var valid = true
+          gridIndex.get(cell).foreach { pops =>
+            pops.exists { pop =>
+              if (euclidianDistance(coord, pop.coordinates) <= 1.9 * homeRange)
+                valid = false
+              !valid
+            }
+          }
+          
+          if (valid)
+            getImmediateNeighbors(cell).exists { neighbor =>
+              gridIndex.get(neighbor).exists { pops =>
+                pops.exists { pop =>
+                  if (euclidianDistance(coord, pop.coordinates) <= 1.9 * homeRange)
+                    valid = false
+                  !valid
+                }
+              }
+            }
+          valid
+        }
+    
+    def generateInitialReference(): Coordinate = 
+      populationSeq.filter(_.species == species).headOption.map(_.coordinates).getOrElse {
+        // Generate initial point in normalized space that's within the landscape
+        @annotation.tailrec
+        def findValidStartPoint(): Coordinate = {
+          val x = rnd.nextDouble() * width
+          val y = rnd.nextDouble() * height
+          val point = new Coordinate(x, y, 0.0)
+          if (landscapeBoundary.contains(GeometryFactory().createPoint(point))) point
+          else findValidStartPoint()
+        }
+        findValidStartPoint()
+      }
+    
+    def generateCandidate(referenceCoord: Coordinate, currentLambda: Double): Coordinate =
+      val angle = rnd.nextDouble() * 2 * math.Pi
+      val distance = exponentialDistribution(currentLambda, rnd) + 1.9 * homeRange
+      
+      @annotation.tailrec
+      def attemptPosition(attempts: Int = 0): Coordinate = {
+        if (attempts >= 10) null  // Give up after too many attempts
+        else {
+          val newX = referenceCoord.x + distance * math.cos(angle)
+          val newY = referenceCoord.y + distance * math.sin(angle)
+          
+          // Handle periodic boundary conditions
+          val wrappedX = if (newX < 0) newX + width else if (newX > width) newX - width else newX
+          val wrappedY = if (newY < 0) newY + height else if (newY > height) newY - height else newY
+          
+          val candidate = new Coordinate(wrappedX, wrappedY, 0.0)
+          if (landscapeBoundary.contains(GeometryFactory().createPoint(candidate))) candidate
+          else attemptPosition(attempts + 1)
+        }
+      }
+      
+      attemptPosition()
+    
+    def findValidLocation(maxAttempts: Int = 50): Coordinate =
+      var attempts = 0
+      var location: Coordinate = null
+      var currentLambda = lambda
+      val initialReference = generateInitialReference()
+      
+      while (attempts < maxAttempts && location == null) {
+        val candidate = generateCandidate(initialReference, currentLambda)
+        if (candidate != null && quickValidityCheck(candidate))
+          location = candidate
+        else {
+          attempts += 1
+          if (attempts % 10 == 0 && currentLambda > lambda * 0.1)
+            currentLambda *= 0.8  // Gradually reduce lambda to search wider
+        }
+      }
+      
+      if (location == null) {
+        // Final fallback: find any valid point
+        @annotation.tailrec
+        def findValidPoint(): Coordinate = {
+          val x = rnd.nextDouble() * width
+          val y = rnd.nextDouble() * height
+          val point = new Coordinate(x, y, 0.0)
+          if (landscapeBoundary.contains(GeometryFactory().createPoint(point))) point
+          else findValidPoint()
+        }
+        findValidPoint()
+      } else location
+      
+    val finalLocation = findValidLocation()
+    // Update spatial index
+    val cell = getGridCell(finalLocation)
+    if (!gridIndex.contains(cell))
+      gridIndex(cell) = scala.collection.mutable.ArrayBuffer[Population]()
+      
+    finalLocation
+
+  // def fastDiskPacking(
+  //   lambda: Double, 
+  //   populationSeq: Seq[Population], 
+  //   rnd: Random, 
+  //   species: Species, 
+  //   landscapeBoundary: Geometry
+  // ): Coordinate =
+  //   val homeRange = species.homeRange
+  //   val cellSize = 1.8 * homeRange
+  //   val lambdaExpansionFactor = 0.8  // Factor to progressively reduce lambda
+  //   val minLambda = lambda * 0.1     // Don't let lambda get too small
+    
+  //   val gridIndex = scala.collection.mutable.Map[GridCell, scala.collection.mutable.ArrayBuffer[Population]]()
+    
+  //   def getGridCell(coord: Coordinate): GridCell =
+  //     GridCell(
+  //       (coord.x / cellSize).toInt,
+  //       (coord.y / cellSize).toInt
+  //     )
+      
+  //   // Initialize index with existing populations of same species
+  //   populationSeq.filter(_.species == species).foreach { pop =>
+  //     val cell = getGridCell(pop.coordinates)
+  //     if (!gridIndex.contains(cell)) 
+  //       gridIndex(cell) = scala.collection.mutable.ArrayBuffer[Population]()
+  //     gridIndex(cell) += pop
+  //   }
+    
+  //   def getImmediateNeighbors(cell: GridCell): Array[GridCell] =
+  //     Array(
+  //       GridCell(cell.x + 1, cell.y),
+  //       GridCell(cell.x - 1, cell.y),
+  //       GridCell(cell.x, cell.y + 1),
+  //       GridCell(cell.x, cell.y - 1)
+  //     )
+    
+  //   def quickValidityCheck(coord: Coordinate): Boolean =
+  //     if (!landscapeBoundary.contains(GeometryFactory().createPoint(coord))) 
+  //       false
+  //     else
+  //       val cell = getGridCell(coord)
+  //       var valid = true
+        
+  //       gridIndex.get(cell).foreach { pops =>
+  //         pops.exists { pop =>
+  //           if (euclidianDistance(coord, pop.coordinates) <= 1.9 * homeRange)
+  //             valid = false
+  //           !valid
+  //         }
+  //       }
+            
+  //       if (valid)
+  //         getImmediateNeighbors(cell).exists { neighbor =>
+  //           gridIndex.get(neighbor).exists { pops =>
+  //             pops.exists { pop =>
+  //               if (euclidianDistance(coord, pop.coordinates) <= 1.9 * homeRange)
+  //                 valid = false
+  //               !valid
+  //             }
+  //           }
+  //         }
+  //       valid
+    
+  //   def generateCandidate(referenceCoord: Coordinate, currentLambda: Double): Coordinate =
+  //     val angle = rnd.nextDouble() * 2 * math.Pi
+  //     val distance = exponentialDistribution(currentLambda, rnd) + 1.9 * homeRange
+  //     new Coordinate(
+  //       referenceCoord.x + distance * math.cos(angle),
+  //       referenceCoord.y + distance * math.sin(angle),
+  //       0.0
+  //     )
+
+    
+  //   def findValidLocation(maxAttempts: Int = 50): Coordinate =
+  //     var attempts = 0
+  //     var location: Coordinate = null
+  //     var currentLambda = lambda
+      
+  //     // Get initial reference coordinate from existing populations or landscape center
+  //     val initialReference = 
+  //       populationSeq.filter(_.species == species).headOption.map(_.coordinates).getOrElse {
+  //         val env = landscapeBoundary.getEnvelopeInternal
+  //         new Coordinate((env.getMinX + env.getMaxX) / 2, (env.getMinY + env.getMaxY) / 2)
+  //       }
+      
+  //     while (attempts < maxAttempts && location == null)
+  //       // Generate candidate based on current lambda
+  //       val candidate = generateCandidate(initialReference, currentLambda)
+
+  //       if (quickValidityCheck(candidate))
+  //         location = candidate
+  //       else
+  //         attempts += 1
+  //         // Reduce lambda every 10 attempts, but not below minLambda
+  //         if (attempts % 10 == 0 && currentLambda > minLambda)
+  //           currentLambda *= lambdaExpansionFactor
+      
+  //     if (location == null)
+  //       // Final fallback: try one last time with minimum lambda
+  //       var fallbackLocation: Coordinate = null
+  //       var fallbackAttempts = 0
+  //       while (fallbackLocation == null && fallbackAttempts < 10)
+  //         val candidate = generateCandidate(initialReference, minLambda)
+
+  //         if (landscapeBoundary.contains(GeometryFactory().createPoint(candidate)))
+  //           fallbackLocation = candidate
+  //         fallbackAttempts += 1
+        
+  //       // If all else fails, return a point that's at least within the boundary
+  //       if (fallbackLocation == null)
+  //         val env = landscapeBoundary.getEnvelopeInternal
+  //         new Coordinate(
+  //           env.getMinX + rnd.nextDouble() * env.getWidth,
+  //           env.getMinY + rnd.nextDouble() * env.getHeight
+  //         )
+  //       else
+  //         fallbackLocation
+  //     else
+  //       location
+    
+  //   val finalLocation = findValidLocation()
+  //   // Update index
+  //   val cell = getGridCell(finalLocation)
+  //   if (!gridIndex.contains(cell))
+  //     gridIndex(cell) = scala.collection.mutable.ArrayBuffer[Population]()
+    
+  //   finalLocation
+
+  
 
   def randomPoint(rnd: Random): Coordinate =
     val x = rnd.nextDouble()
     val y = rnd.nextDouble()
-    Coordinate(x, y)
+    Coordinate(x, y,0.0)
 
   private def exponentialDistribution(lambda: Double, rnd: Random): Double =
     math.log(1 - rnd.nextDouble()) / (-lambda)
@@ -36,9 +324,7 @@ object Utils:
     val x = referenceCoordinate.x + distance*math.cos(angle)
     val y = referenceCoordinate.y + distance*math.sin(angle)
 
-    val coordinate = Coordinate(x,y)
-    val containsPoint = landscapeBoundary.contains(GeometryFactory().createPoint(coordinate))  
-    val containsOrigin = landscapeBoundary.contains(GeometryFactory().createPoint(Coordinate(0,0)))
+    val coordinate = Coordinate(x,y)    
     if landscapeBoundary.contains(GeometryFactory().createPoint(coordinate)) then 
       coordinate 
     else
@@ -108,6 +394,6 @@ object Utils:
 
     val dice = rnd.nextDouble()
     
-    normalizedCumProbability.find(p => p._2 < dice).getOrElse(-1,0.0)._1
+    normalizedCumProbability.find(p => p._2 > dice).getOrElse(-1,0.0)._1
 
 end Utils
