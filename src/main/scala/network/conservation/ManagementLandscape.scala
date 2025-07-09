@@ -17,12 +17,18 @@ case class ManagementLandscape(
     /*
     Protection plan to preserve maximum number of species.
     */
-
     def updateConnectivity(areasConnectivity: Map[Int,Int], tileId: Int): Map[Int,Int] =
       val neighbors: Seq[Long] = HexagonalGrid.neighbors(tileId,HexagonalGrid.radius(this.managementAreas.size),1)
-      val newConnectivity: Map[Int,Int] = areasConnectivity.collect{
-        case x if neighbors.contains(x._1) => (x._1,x._2+1)
-      }.toMap.removed(tileId)
+      
+      val newConnectivity: Map[Int,Int] = areasConnectivity
+      .filterNot(_._1 == tileId)  // Remove selected tile
+      .map { case (areaId, currentCount) =>
+        if (neighbors.contains(areaId)) 
+          (areaId, currentCount + 1)  // Increment for neighbors
+        else 
+          (areaId, currentCount)      // Keep same count for non-neighbors
+      }
+      
       newConnectivity 
 
     @tailrec  
@@ -32,7 +38,7 @@ case class ManagementLandscape(
       areasConnectivity: Map[Int,Int],
       remainingTiles: Int
     ): Seq[ManagementArea] =
-      
+
       if !(remainingTiles>0) then
         managementAreas 
       else
@@ -45,21 +51,23 @@ case class ManagementLandscape(
 
         val tileId: Int = Utils.chooseStochasticEvent(totalConservationProbability,rnd)
 
-        val newAreasSpeciesRichness = areasSpeciesRichness.removed(tileId)
+        val newAreasSpeciesRichness = areasSpeciesRichness.filterNot(_._1 == tileId)
         val newAreasConnectivity = updateConnectivity(areasConnectivity, tileId) 
-        val newManagementAreas = managementAreas.collect{
-          case a if a.id == tileId => a.updateProtectionStatus()
+        val newManagementAreas = managementAreas.map{
+          a => if a.id == tileId then a.updateProtectionStatus() else a
         }
 
         protectionRecursion(newManagementAreas,newAreasSpeciesRichness,newAreasConnectivity,remainingTiles-1)
 
     val nTiles: Int = (this.managementAreas.size*worldParameters.fractionProtected).toInt 
+    
     val areasSpeciesRichness: Map[Int,Int] = this.managementAreas.map(a => (a.id, a.getSpeciesRichness)).toMap
     val areasConnectivity: Map[Int,Int] = this.managementAreas.map(a => (a.id,0)).toMap
 
     val newManagementAreas: Seq[ManagementArea] = protectionRecursion(this.managementAreas,areasSpeciesRichness,areasConnectivity,nTiles)
 
-    this.copy(managementAreas=managementAreas)
+    this.copy(managementAreas=newManagementAreas)
+
 
   def updatePersistentPopulations(extinctPopulations: Seq[(Int,Int)]): ManagementLandscape =
 
@@ -71,15 +79,16 @@ case class ManagementLandscape(
 object ManagementLandscape:
 
   def apply(landscapeGrid: Map[Int,Polygon], populations: Seq[Population], rnd: Random): ManagementLandscape =
-
-    val managementAreas: Seq[ManagementArea] =
-        landscapeGrid.map( n =>
-          ManagementArea(n._1, ProtectionStatus.Unprotected, populations
-            .collect { case p if GeometryFactory().createPoint(p.coordinates).within(n._2) => (p.id, p.species.id) }.toMap)
-        )
-        .toSeq
-
-    ManagementLandscape(managementAreas)
+    
+    // Create management areas normally
+    val areas = landscapeGrid.map { case (id, hex) =>
+      val pops = populations.collect {
+        case p if GeometryFactory().createPoint(p.coordinates).within(hex) => (p.id, p.species.id)
+      }
+      ManagementArea(id, ProtectionStatus.Unprotected, pops.toMap)
+    }
+    
+    ManagementLandscape(areas.toSeq)
 
 
 end ManagementLandscape
