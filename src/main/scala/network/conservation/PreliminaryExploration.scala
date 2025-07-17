@@ -307,7 +307,10 @@ object NetworkAnalysis extends App {
       landscapeRadius = 3,
       fractionProtected = 0.3,
       connectivity = c,
-      decayDistancePopulations = 1000
+      decayDistancePopulations = 1000,
+      wSpRichness = 0.0,
+      wInteractionRichness = 0.0, 
+      wAbundance = 0.0    
     )
     
     // println(s"\nAnalyzing with basalHomeRange=$hr, decayDistance=$dd")
@@ -323,6 +326,9 @@ object NetworkAnalysis extends App {
       fractionProtected = params.fractionProtected,
       connectivity = params.connectivity,
       decayDistancePopulations = params.decayDistancePopulations,
+      wSpRichness = params.wSpRichness,
+      wInteractionRichness = params.wInteractionRichness,
+      wAbundance = params.wAbundance,
       rnd = Random(12L)
     )
     

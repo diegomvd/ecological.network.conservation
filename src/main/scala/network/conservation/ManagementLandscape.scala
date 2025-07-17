@@ -8,6 +8,7 @@ import scala.util.Random
 
 import Utils.randomPoint
 import scala.annotation.tailrec
+import network.conservation.HexagonalGrid.area
 
 case class ManagementLandscape(
                                 managementAreas: Seq[ManagementArea]
@@ -36,35 +37,57 @@ case class ManagementLandscape(
       managementAreas: Seq[ManagementArea],
       areasSpeciesRichness: Map[Int,Int],
       areasConnectivity: Map[Int,Int],
+      areasInteractionRichness: Map[Int,Int],
+      areasAbundance: Map[Int,Int],
       remainingTiles: Int
     ): Seq[ManagementArea] =
 
       if !(remainingTiles>0) then
         managementAreas 
       else
+
+        // Prioritization contribution of species richness
         val biodivConservationProbability: Map[Int,Double] = areasSpeciesRichness.map( x => (x._1, 1-math.exp(-x._2)) )
+        
+        // Prioritization contribution of connectivity
         val connectivityConservationProbability: Map[Int,Double] = areasConnectivity.map( x => (x._1, 1-math.exp(-x._2)))
 
+        // Prioritization contribution of interaction richness
+        val interactionConservationProbability: Map[Int,Double] = areasInteractionRichness.map( x => (x._1, 1-math.exp(-x._2)))
+
+        // Prioritization contribution of abundance
+        val abundanceConservationProbability: Map[Int,Double] = areasAbundance.map( x => (x._1, 1-math.exp(-x._2)))
+
         val totalConservationProbability: Map[Int,Double] = biodivConservationProbability.map(
-          bio => (bio._1, bio._2 + worldParameters.connectivity * connectivityConservationProbability.getOrElse(bio._1,0.0))
+          bio => 
+            (bio._1, 
+            bio._2 * worldParameters.wSpRichness 
+            + worldParameters.connectivity * connectivityConservationProbability.getOrElse(bio._1,0.0) 
+            + worldParameters.wInteractionRichness * interactionConservationProbability.getOrElse(bio._1,0.0)
+            + worldParameters.wAbundance * abundanceConservationProbability.getOrElse(bio._1,0.0))
         )
+         
 
         val tileId: Int = Utils.chooseStochasticEvent(totalConservationProbability,rnd)
 
         val newAreasSpeciesRichness = areasSpeciesRichness.filterNot(_._1 == tileId)
         val newAreasConnectivity = updateConnectivity(areasConnectivity, tileId) 
+        val newAreasInteractionRichness = areasInteractionRichness.filterNot(_._1 == tileId)
+        val newAreasAbundance = areasAbundance.filterNot(_._1 == tileId)
         val newManagementAreas = managementAreas.map{
           a => if a.id == tileId then a.updateProtectionStatus() else a
         }
 
-        protectionRecursion(newManagementAreas,newAreasSpeciesRichness,newAreasConnectivity,remainingTiles-1)
+        protectionRecursion(newManagementAreas,newAreasSpeciesRichness,newAreasConnectivity,newAreasInteractionRichness, newAreasAbundance, remainingTiles-1)
 
     val nTiles: Int = (this.managementAreas.size*worldParameters.fractionProtected).toInt 
     
     val areasSpeciesRichness: Map[Int,Int] = this.managementAreas.map(a => (a.id, a.getSpeciesRichness)).toMap
     val areasConnectivity: Map[Int,Int] = this.managementAreas.map(a => (a.id,0)).toMap
+    val areasInteractionRichness: Map[Int,Int] = this.managementAreas.map(a => (a.id, a.getInteractionRichness)).toMap
+    val areasAbundance: Map[Int,Int] = this.managementAreas.map(a => (a.id, a.getAbundance)).toMap
 
-    val newManagementAreas: Seq[ManagementArea] = protectionRecursion(this.managementAreas,areasSpeciesRichness,areasConnectivity,nTiles)
+    val newManagementAreas: Seq[ManagementArea] = protectionRecursion(this.managementAreas,areasSpeciesRichness,areasConnectivity, areasInteractionRichness, areasAbundance, nTiles)
 
     this.copy(managementAreas=newManagementAreas)
 

@@ -10,7 +10,10 @@ case class WorldParameters(
   landscapeRadius: Int,
   fractionProtected: Double,
   connectivity: Double,
-  decayDistancePopulations: Double
+  decayDistancePopulations: Double,
+  wSpRichness: Double,
+  wInteractionRichness: Double,
+  wAbundance: Double
 ):
 
   def extinctionProbability(status: ProtectionStatus): Double =

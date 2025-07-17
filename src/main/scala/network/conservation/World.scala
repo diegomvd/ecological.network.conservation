@@ -4,6 +4,7 @@ import scala.util.Random
 import org.jgrapht.*
 import org.jgrapht.graph.*
 import org.apache.commons.math3.distribution.BetaDistribution
+import org.apache.commons.math3.distribution.LogNormalDistribution
 import org.jgrapht.alg.connectivity.{ConnectivityInspector,KosarajuStrongConnectivityInspector}
 import org.locationtech.jts.geom.{GeometryFactory,MultiPolygon,Coordinate}
 import org.locationtech.jts.operation.distance.DistanceOp
@@ -100,10 +101,13 @@ object World:
     fractionProtected: Double,
     connectivity: Double, 
     decayDistancePopulations: Double,
+    wSpRichness: Double,
+    wInteractionRichness: Double,
+    wAbundance: Double,  
     rnd: Random
   ): World =
 
-    val worldParameters = WorldParameters(numberOfSpecies, connectanceMetaWeb, numberOfPopulations, basalHomeRange, landscapeRadius, fractionProtected, connectivity, decayDistancePopulations)
+    val worldParameters = WorldParameters(numberOfSpecies, connectanceMetaWeb, numberOfPopulations, basalHomeRange, landscapeRadius, fractionProtected, connectivity, decayDistancePopulations, wSpRichness, wInteractionRichness, wAbundance)
 
     val metaWeb = generateMetaWeb(numberOfSpecies, connectanceMetaWeb, rnd, basalHomeRange)
 
@@ -152,9 +156,13 @@ object World:
 
 
     @tailrec
-    def rec(): DefaultDirectedGraph[Int, DefaultEdge] =
+    def rec(): DefaultDirectedGraph[(Int, Double), DefaultEdge] =
 
-      val nicheValues = Seq.fill(numberOfSpecies)(rnd.nextDouble()).sorted
+      // Body sizes are drawn from lognormal distribution where close to 90% of species fall within 4 orders of magnitude
+      val bodySizes = Seq.fill(numberOfSpecies)(LogNormalDistribution(0,3).sample()).sorted
+
+      // Niche values are scaled between 0 and 1 from body sizes
+      val nicheValues = bodySizes.map(m => (m-bodySizes.min)/(bodySizes.max-bodySizes.min))
 
       // Feeding range from beta distribution. The species with the lowest niche value is set to be a basal species: feedingRange = 0
       val beta = 0.5 / connectance - 1
@@ -172,7 +180,7 @@ object World:
         )
 
       // Instantiate an empty MetaWeb
-      val metaWeb = DefaultDirectedGraph[Int, DefaultEdge](classOf[DefaultEdge])
+      val metaWeb = DefaultDirectedGraph[(Int, Double), DefaultEdge](classOf[DefaultEdge])
 
       // Populate the meta web: if a species S1 is within the feeding range of a species S2 then S2 is a predator of S1.
       val x = nicheValues.zipWithIndex.map {
@@ -181,9 +189,9 @@ object World:
             (f, j) =>
               if n > f._1 - 0.5 * f._2 && n < f._1 + 0.5 * f._2 && i != j
               then {
-                val addedPredator = metaWeb.addVertex(j)
-                val addedPrey = metaWeb.addVertex(i)
-                val newInteraction = metaWeb.addEdge(j, i, DefaultEdge())
+                val addedPredator = metaWeb.addVertex((j,bodySizes.lift(j).getOrElse(0.0)))
+                val addedPrey = metaWeb.addVertex((i,bodySizes.lift(i).getOrElse(0.0)))
+                val newInteraction = metaWeb.addEdge((j,bodySizes.lift(j).getOrElse(0.0)), (i,bodySizes.lift(i).getOrElse(0.0)), DefaultEdge())
               }
           }
       }
@@ -239,21 +247,22 @@ object World:
     val metaWebDef = DefaultDirectedGraph[Species, DefaultEdge](classOf[DefaultEdge])
 
     metaWeb.vertexSet().asScala.foreach(
-      predatorId => {
-        val trophicLevel = Species.calculateTrophicLevel(predatorId, metaWeb)
-        val predator = Species(predatorId, trophicLevel, rnd, basalHomeRange)
+      predator => {
+        val trophicLevel = Species.calculateTrophicLevel(predator, metaWeb)
+        val predatorSpecies = Species(predator._1, predator._2, basalHomeRange, trophicLevel, rnd)
         // If the species was already added then the graph is left unchanged.
-        val addedPredator = metaWebDef.addVertex(predator)
+        val addedPredator = metaWebDef.addVertex(predatorSpecies)
 
-        metaWeb.outgoingEdgesOf(predatorId).asScala.toSeq.foreach {
+        metaWeb.outgoingEdgesOf(predator).asScala.toSeq.foreach {
           link => {
-            val preyId = metaWeb.getEdgeTarget(link)
-            val trophicLevel = Species.calculateTrophicLevel(preyId, metaWeb)
-            val prey = Species(preyId, trophicLevel, rnd, basalHomeRange)
+            val prey = metaWeb.getEdgeTarget(link)
+
+            val trophicLevel = Species.calculateTrophicLevel(prey, metaWeb)
+            val preySpecies = Species(prey._1, prey._2, basalHomeRange, trophicLevel, rnd)
             // If the species was already added then the graph is left unchanged.
-            val addedPrey = metaWebDef.addVertex(prey)
+            val addedPrey = metaWebDef.addVertex(preySpecies)
             // If the interaction was already added then the graph is left unchanged.
-            val newInteraction = metaWebDef.addEdge(predator, prey, DefaultEdge())
+            val newInteraction = metaWebDef.addEdge(predatorSpecies, preySpecies, DefaultEdge())
           }
         }
       }

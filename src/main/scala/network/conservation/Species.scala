@@ -5,22 +5,22 @@ import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
 import scala.util.Random
 import scala.jdk.CollectionConverters.*
 
-case class Species(id: Int, trophicLevel: Int, abundance: Double, homeRange: Double)
+case class Species(id: Int, bodySize: Double, abundance: Double, homeRange: Double, trophicLevel: Int)
 
 object Species:
 
-  def apply(id: Int, trophicLevel: Int, rnd: Random, basalHomeRange: Double):
+  def apply(id: Int, bodySize: Double,  basalHomeRange: Double, trophicLevel: Int, rnd: Random):
   Species =
-    val (abundance, homeRange)  = speciesTraits(trophicLevel,basalHomeRange)
-    Species(id, trophicLevel, abundance = abundance, homeRange = homeRange)
+    val (abundance, homeRange)  = speciesTraits(bodySize,basalHomeRange)
+    Species(id, bodySize, abundance = abundance, homeRange = homeRange, trophicLevel = trophicLevel )
 
-  private def speciesTraits(trophicLevel: Int, basalHomeRange: Double) =
-    // for each trophic level 1 function abundance degree
-    val relativeAbundance = math.pow(5,2-trophicLevel)
-    val homeRange = basalHomeRange * math.pow(5,trophicLevel)
+  private def speciesTraits(bodySize: Double, basalHomeRange: Double) =
+
+    val relativeAbundance = math.pow(bodySize,-0.75)
+    val homeRange = basalHomeRange * math.pow(bodySize,0.75)
     (relativeAbundance, homeRange)
 
-  def calculateTrophicLevel(id: Int, metaWeb: DefaultDirectedGraph[Int,DefaultEdge]): Int =
+  def calculateTrophicLevel(id: (Int,Double), metaWeb: DefaultDirectedGraph[(Int,Double),DefaultEdge]): Int =
 
     val predators = metaWeb.incomingEdgesOf(id).asScala.map(link => metaWeb.getEdgeSource(link))
     val preys = metaWeb.outgoingEdgesOf(id).asScala.map(link => metaWeb.getEdgeTarget(link))

@@ -31,5 +31,11 @@ case class ManagementArea(id: Int, status: ProtectionStatus, populations: Map[In
   def getSpeciesRichness=
     this.getSpecies.size 
 
+  def getInteractionRichness=
+    this.populations.values.toSet.size 
+
+  def getAbundance=
+    this.populations.size  
+
     
 

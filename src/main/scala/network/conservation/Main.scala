@@ -14,7 +14,11 @@ object Main extends App:
       landscapeRadius = 3,
       fractionProtected = 0.7,
       connectivity = 0.0,
-      decayDistancePopulations = 100000)
+      decayDistancePopulations = 100000,
+      wSpRichness = 0.0,
+      wInteractionRichness = 0.0,
+      wAbundance = 0.0
+    )
 
   // Initialize the World
   private val initialWorld = World(
@@ -26,6 +30,9 @@ object Main extends App:
     fractionProtected = parameters.fractionProtected,
     connectivity = parameters.connectivity,
     decayDistancePopulations = parameters.decayDistancePopulations,
+    wSpRichness = parameters.wSpRichness,
+    wInteractionRichness = parameters.wInteractionRichness,
+    wAbundance = parameters.wAbundance,
     rnd = Random(12L)
   )
 
