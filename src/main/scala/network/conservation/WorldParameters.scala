@@ -3,17 +3,11 @@ package network.conservation
 import ProtectionStatus.{Protected, Unprotected}
 
 case class WorldParameters(
-  numberOfSpecies: Int,
-  connectanceMetaWeb: Double,
-  numberOfPopulations: Int,
-  basalHomeRange: Double,
-  landscapeRadius: Int,
-  fractionProtected: Double,
-  connectivity: Double,
-  decayDistancePopulations: Double,
-  wSpRichness: Double,
-  wInteractionRichness: Double,
-  wAbundance: Double
+  numberOfSpecies: Int = 100,
+  connectanceMetaWeb: Double = 0.2,
+  areaOverlap: Double = 2.0, // this is the fraction of the landscape that is covered by all home ranges, it can be larger than 1
+  medianHomeRange: Double = 0.01, // median home range radius relative to the landscape radius
+  avgPopulationsPerTile: Int = 10, // average number of populations per tile
 ):
 
   def extinctionProbability(status: ProtectionStatus): Double =
