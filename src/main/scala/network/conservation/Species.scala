@@ -9,16 +9,16 @@ case class Species(id: Int, bodySize: Double, abundance: Double, homeRange: Doub
 
 object Species:
 
-  def apply(id: Int, bodySize: Double,  basalHomeRange: Double, trophicLevel: Int, rnd: Random):
+  def apply(id: Int, bodySize: Double, trophicLevel: Int, rnd: Random):
   Species =
-    val (abundance, homeRange)  = speciesTraits(bodySize,basalHomeRange)
+    val (abundance, homeRange)  = speciesTraits(bodySize)
     Species(id, bodySize, abundance = abundance, homeRange = homeRange, trophicLevel = trophicLevel )
 
-  private def speciesTraits(bodySize: Double, basalHomeRange: Double) =
+  private def speciesTraits(bodySize: Double) =
 
     val relativeAbundance = math.pow(bodySize,-0.75)
-    val homeRange = basalHomeRange * math.pow(bodySize,0.75)
-    (relativeAbundance, homeRange)
+    val relativeHomeRange = math.pow(bodySize,0.75)
+    (relativeAbundance, relativeHomeRange)
 
   def calculateTrophicLevel(id: (Int,Double), metaWeb: DefaultDirectedGraph[(Int,Double),DefaultEdge]): Int =
 
