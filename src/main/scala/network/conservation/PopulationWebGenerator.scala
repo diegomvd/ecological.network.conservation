@@ -149,7 +149,7 @@ object PopulationWebGenerator:
     popsA.foreach { popA =>
       
       // Calculate maximum possible interaction distance with species B
-      val maxDistance = 0.5 * (popA.species.homeRange + maxHomeRangeB)
+      val maxDistance = (popA.species.homeRange + maxHomeRangeB)
       
       val candidatesB = if (maxDistance > 0.3) {
         // Brute force: interaction range too large for spatial optimization
@@ -199,7 +199,7 @@ object PopulationWebGenerator:
    */
   private def canInteract(p1: Population, p2: Population): Boolean = {
     val distance = SquareGrid.periodicDistance(p1.coordinates, p2.coordinates)
-    val interactionRadius = 0.5 * (p1.species.homeRange + p2.species.homeRange)
+    val interactionRadius = (p1.species.homeRange + p2.species.homeRange)
     distance < interactionRadius
   }
   
