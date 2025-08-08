@@ -13,6 +13,6 @@ case class WorldParameters(
   def extinctionProbability(status: ProtectionStatus): Double =
     status match
       case Protected => 0.0
-      case Unprotected => 0.9
+      case Unprotected => 0.5
       case null => 0.0
 

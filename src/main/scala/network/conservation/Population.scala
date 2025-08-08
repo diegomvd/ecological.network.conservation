@@ -22,7 +22,11 @@ object Population:
     val numCenters = 1
     //val numCenters = math.max(1, 1 + targetPopulations / 100 + rnd.nextInt(3)) // 1-5 centers
 
-    val clusterRadius = species.homeRange * math.sqrt(targetPopulations.toDouble) * 1.5 // todo: Spreading factor could be parameter
+    val spreadingFactor = 1000.0
+//    val clusterRadius = species.homeRange * math.sqrt(targetPopulations.toDouble) * 10.0 // todo: Spreading factor could be parameter
+
+    val clusterRadius = species.homeRange * (targetPopulations.toDouble) * spreadingFactor // todo: Spreading factor could be parameter
+
 
     val candidates = Utils.generateThomasProcessCandidates(
       targetPopulations * 4, //TODO: 4x oversampling could be parameter 

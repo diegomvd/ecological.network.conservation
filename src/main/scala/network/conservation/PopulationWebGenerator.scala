@@ -19,20 +19,20 @@ object PopulationWebGenerator:
     metaWeb: DefaultDirectedGraph[Species,DefaultEdge]
   ): DefaultDirectedGraph[Population,DefaultEdge] = {
     
-    println(s"Generating population web for ${populations.size} populations...")
+   // println(s"Generating population web for ${populations.size} populations...")
     
     // PHASE 1: Species organization (O(n))
     val populationsBySpecies = populations.groupBy(_.species)
     val interactingSpeciesPairs = extractInteractingPairs(metaWeb)
     
-    println(s"Found ${interactingSpeciesPairs.size} interacting species pairs out of ${metaWeb.vertexSet().size() * metaWeb.vertexSet().size()} possible")
-    println(s"Species distribution: ${populationsBySpecies.map(p => s"${p._1.id}→${p._2.size}").mkString(", ")}")
+    //println(s"Found ${interactingSpeciesPairs.size} interacting species pairs out of ${metaWeb.vertexSet().size() * metaWeb.vertexSet().size()} possible")
+    //println(s"Species distribution: ${populationsBySpecies.map(p => s"${p._1.id}→${p._2.size}").mkString(", ")}")
     
     // PHASE 2: Spatial preparation (O(n))  
     val typicalDistance = calculateTypicalDistance(populationsBySpecies)
     val spatialIndex = buildSingleGrid(populations, typicalDistance)
     
-    println(f"Typical interaction distance: ${typicalDistance}%.4f")
+    //println(f"Typical interaction distance: ${typicalDistance}%.4f")
     
     // PHASE 3: Species-first processing 
     val allInteractingPairs = scala.collection.mutable.ListBuffer[(Population, Population)]()
@@ -53,8 +53,8 @@ object PopulationWebGenerator:
       }
     }
     
-    println(s"Distance checks: ${totalChecks} (spatially filtered: ${spatiallyFiltered}, brute force: ${bruteForceUsed})")
-    println(s"Found ${allInteractingPairs.size} interacting population pairs")
+    //println(s"Distance checks: ${totalChecks} (spatially filtered: ${spatiallyFiltered}, brute force: ${bruteForceUsed})")
+    //println(s"Found ${allInteractingPairs.size} interacting population pairs")
     
     // PHASE 4: Build graph (O(pairs))
     buildPopulationGraph(allInteractingPairs.toSeq, metaWeb)
@@ -92,14 +92,14 @@ object PopulationWebGenerator:
         speciesB <- species
         if speciesA != speciesB
       } yield {
-        0.5 * (speciesA.homeRange + speciesB.homeRange)
+        (speciesA.homeRange + speciesB.homeRange)
       }
       
       val sortedDistances = allInteractionDistances.sorted
       val median = sortedDistances(sortedDistances.size / 2)
       
-      println(f"Home range distribution: ${species.map(_.homeRange).sorted.mkString(", ")}")
-      println(f"Interaction distances: min=${sortedDistances.head}%.4f, median=${median}%.4f, max=${sortedDistances.last}%.4f")
+      //println(f"Home range distribution: ${species.map(_.homeRange).sorted.mkString(", ")}")
+      //println(f"Interaction distances: min=${sortedDistances.head}%.4f, median=${median}%.4f, max=${sortedDistances.last}%.4f")
       
       median
     }
@@ -113,7 +113,7 @@ object PopulationWebGenerator:
     val cellSize = typicalDistance / 2.0
     val gridSize = math.max(5, math.min(100, math.ceil(1.0 / cellSize).toInt))
     
-    println(f"Building spatial index: ${gridSize}x${gridSize} cells, cell size ${cellSize}%.4f")
+    //println(f"Building spatial index: ${gridSize}x${gridSize} cells, cell size ${cellSize}%.4f")
     
     val spatialIndex = SimpleSpatialIndex(cellSize, gridSize)
     
@@ -123,7 +123,7 @@ object PopulationWebGenerator:
     }
     
     val occupiedCells = spatialIndex.getOccupiedCells.size
-    println(s"Populations distributed across ${occupiedCells}/${gridSize * gridSize} cells")
+    //println(s"Populations distributed across ${occupiedCells}/${gridSize * gridSize} cells")
     
     spatialIndex
   }
@@ -238,7 +238,7 @@ object PopulationWebGenerator:
       }
     }
     
-    println(s"Built population web with ${populationWeb.vertexSet().size()} vertices and ${populationWeb.edgeSet().size()} edges")
+   // println(s"Built population web with ${populationWeb.vertexSet().size()} vertices and ${populationWeb.edgeSet().size()} edges")
     populationWeb
   }
 

@@ -112,7 +112,8 @@ object World:
 
     val metaWeb = generateMetaWeb(
       worldParameters.numberOfSpecies, 
-      worldParameters.connectanceMetaWeb, 
+      worldParameters.connectanceMetaWeb,
+      worldParameters.medianHomeRange, 
       rnd
     )
 
@@ -123,27 +124,26 @@ object World:
      
     val landscapeGrid = SquareGrid.fromArea(nTiles)
 
-    println("Generating populations.")
+   // println("Generating populations.")
     val populations = generatePopulations(metaWeb, numberOfPopulations, rnd)
 
-    println("Generating interaction network.")
+    //println("Generating interaction network.")
     val populationWeb = PopulationWebGenerator.generatePopulationWeb(populations, metaWeb)
       
-    println("Removing isolated populations.")
+    //println("Removing isolated populations.")
   
     // Update populations given that the non interacting ones are removed from the network
     val populationsInit = populationWeb.vertexSet().asScala.toSeq
 
-    println("Creating management landscape.")
+    //println("Creating management landscape.")
     val managementLandscape = ManagementLandscape(landscapeGrid, populationsInit, rnd).applyProtectionPlan(conservationParameters,rnd)
 
-    println("Initializing world.")
+    //println("Initializing world.")
     new World(populationsInit, managementLandscape, metaWeb, populationWeb, worldParameters, conservationParameters, rnd)
 
 
-  private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, rnd: Random):
+  private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, medianHomeRange: Double, rnd: Random):
   DefaultDirectedGraph[Species, DefaultEdge]  =
-
 
     @tailrec
     def rec(): DefaultDirectedGraph[(Int, Double), DefaultEdge] =
@@ -151,13 +151,11 @@ object World:
       // Body sizes are drawn from lognormal distribution where close to 90% of species fall within 4 orders of magnitude
       val bodySizes = Seq.fill(numberOfSpecies)(LogNormalDistribution(0,3).sample()).sorted
 
-
-
       // Niche values are scaled between 0 and 1 from body sizes
       val nicheValues = bodySizes.map(m => (m-bodySizes.min)/(bodySizes.max-bodySizes.min))
 
       val nicheValuesMax = nicheValues.max
-     
+    
       // Feeding range from beta distribution. The species with the lowest niche value is set to be a basal species: feedingRange = 0
       val beta = 0.5 / connectance - 1 // how to explain this?? 
       val feedingRange =
@@ -246,31 +244,48 @@ object World:
         }
       }
 
-    val metaWeb = rec()
+    val rawMetaWeb = rec()
 
+    // First pass: create species with raw (relative) homeRange values
+    val rawSpecies = rawMetaWeb.vertexSet().asScala.toSeq.map { vertex =>
+      val trophicLevel = Species.calculateTrophicLevel(vertex, rawMetaWeb)
+      Species(vertex._1, vertex._2, trophicLevel, rnd)
+    }
+
+    // HOME RANGE SCALING - convert from relative to absolute values
+    val relativeHomeRanges = rawSpecies.map(_.homeRange).sorted
+    val currentMedianHomeRange = relativeHomeRanges(relativeHomeRanges.size / 2)
+    val scalingFactor = medianHomeRange / currentMedianHomeRange
+    
+    // println(f"=== HOME RANGE SCALING ===")
+    // println(f"Current median relative home range: ${currentMedianHomeRange}%.4f")
+    // println(f"Target median home range (radius): ${medianHomeRange}%.4f") 
+    // println(f"Scaling factor: ${scalingFactor}%.6f")
+    // println(f"Raw home range range: ${relativeHomeRanges.head}%.4f - ${relativeHomeRanges.last}%.4f")
+    
+    val scaledSpecies = rawSpecies.map { species =>
+      species.copy(homeRange = species.homeRange * scalingFactor)
+    }
+    
+    val finalHomeRanges = scaledSpecies.map(_.homeRange).sorted
+    // println(f"Scaled home range range: ${finalHomeRanges.head}%.6f - ${finalHomeRanges.last}%.6f")
+    // println(f"Final median home range: ${finalHomeRanges(finalHomeRanges.size / 2)}%.6f")
+
+    // Second pass: build the final metaweb with properly scaled species
     val metaWebDef = DefaultDirectedGraph[Species, DefaultEdge](classOf[DefaultEdge])
 
-    metaWeb.vertexSet().asScala.foreach(
-      predator => {
-        val trophicLevel = Species.calculateTrophicLevel(predator, metaWeb)
-        val predatorSpecies = Species(predator._1, predator._2, trophicLevel, rnd)
-        // If the species was already added then the graph is left unchanged.
-        val addedPredator = metaWebDef.addVertex(predatorSpecies)
+    rawMetaWeb.vertexSet().asScala.foreach { predatorVertex =>
+      val predatorSpecies = scaledSpecies.find(_.id == predatorVertex._1).get
+      val addedPredator = metaWebDef.addVertex(predatorSpecies)
 
-        metaWeb.outgoingEdgesOf(predator).asScala.toSeq.foreach {
-          link => {
-            val prey = metaWeb.getEdgeTarget(link)
-
-            val trophicLevel = Species.calculateTrophicLevel(prey, metaWeb)
-            val preySpecies = Species(prey._1, prey._2, trophicLevel, rnd)
-            // If the species was already added then the graph is left unchanged.
-            val addedPrey = metaWebDef.addVertex(preySpecies)
-            // If the interaction was already added then the graph is left unchanged.
-            val newInteraction = metaWebDef.addEdge(predatorSpecies, preySpecies, DefaultEdge())
-          }
-        }
+      rawMetaWeb.outgoingEdgesOf(predatorVertex).asScala.toSeq.foreach { link =>
+        val preyVertex = rawMetaWeb.getEdgeTarget(link)
+        val preySpecies = scaledSpecies.find(_.id == preyVertex._1).get
+        val addedPrey = metaWebDef.addVertex(preySpecies)
+        val newInteraction = metaWebDef.addEdge(predatorSpecies, preySpecies, DefaultEdge())
       }
-    )
+    }
+    
     metaWebDef
 
   private def generatePopulations(
