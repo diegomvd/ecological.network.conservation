@@ -34,6 +34,9 @@ case class ManagementLandscape(
       
       newConnectivity 
 
+    def scalingMinMax(value: Double, min: Double, max: Double): Double =
+      (value - min) / (max - min)
+
     @tailrec  
     def protectionRecursion(
       managementAreas: Seq[ManagementArea],
@@ -48,17 +51,28 @@ case class ManagementLandscape(
         managementAreas 
       else
 
+        // Each tile is associate with a score that is a weighted combination of species richness, connectivity, interaction richness and abundance.
+        // Each component is scaled to be between 0 and 1
+
         // Prioritization contribution of species richness
-        val biodivConservationProbability: Map[Int,Double] = areasSpeciesRichness.map(x => (x._1, 1-math.exp(-x._2)))
+        val maxSpeciesRichness = areasSpeciesRichness.values.max.toDouble
+        val minSpeciesRichness = areasSpeciesRichness.values.min.toDouble
+        val biodivConservationProbability: Map[Int,Double] = areasSpeciesRichness.map(x => (x._1, scalingMinMax(x._2, minSpeciesRichness, maxSpeciesRichness)))
         
         // Prioritization contribution of connectivity
-        val connectivityConservationProbability: Map[Int,Double] = areasConnectivity.map(x => (x._1, 1-math.exp(-x._2)))
+        val maxNeighbors = areasConnectivity.values.max.toDouble
+        val minNeighbors = areasConnectivity.values.min.toDouble
+        val connectivityConservationProbability: Map[Int,Double] = areasConnectivity.map(x => (x._1, scalingMinMax(x._2, minNeighbors, maxNeighbors)))
 
         // Prioritization contribution of interaction richness
-        val interactionConservationProbability: Map[Int,Double] = areasInteractionRichness.map(x => (x._1, 1-math.exp(-x._2)))
+        val maxInteractionRichness = areasInteractionRichness.values.max.toDouble
+        val minInteractionRichness = areasInteractionRichness.values.min.toDouble
+        val interactionConservationProbability: Map[Int,Double] = areasInteractionRichness.map(x => (x._1, scalingMinMax(x._2, minInteractionRichness, maxInteractionRichness)))
 
         // Prioritization contribution of abundance
-        val abundanceConservationProbability: Map[Int,Double] = areasAbundance.map(x => (x._1, 1-math.exp(-x._2)))
+        val maxAbundance = areasAbundance.values.max.toDouble
+        val minAbundance = areasAbundance.values.min.toDouble
+        val abundanceConservationProbability: Map[Int,Double] = areasAbundance.map(x => (x._1, scalingMinMax(x._2, minAbundance, maxAbundance)))
 
         val totalConservationProbability: Map[Int,Double] = biodivConservationProbability.map(
           bio => 

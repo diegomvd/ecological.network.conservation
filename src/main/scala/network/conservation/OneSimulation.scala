@@ -9,7 +9,7 @@ private def logNetworkDiagnostics(initialWorld: World, finalWorld: World, nCasca
   println(s"=" * 60)
   
   // === POPULATION STATISTICS ===
-  val initialPops = initialWorld.populations.size
+  val initialPops = initialWorld.populations.count(!_.extinct)
   val finalPops = finalWorld.populations.count(!_.extinct)
   val extinctPops = initialPops - finalPops
   val popSurvivalRate = (finalPops.toDouble / initialPops) * 100
@@ -22,7 +22,7 @@ private def logNetworkDiagnostics(initialWorld: World, finalWorld: World, nCasca
   println(f"  Extinction cascades: ${nCascades}")
   
   // === SPECIES STATISTICS ===
-  val initialSpecies = initialWorld.populations.map(_.species.id).toSet.size
+  val initialSpecies = initialWorld.populations.filter(!_.extinct).map(_.species.id).toSet.size
   val finalSpecies = finalWorld.populations.filter(!_.extinct).map(_.species.id).toSet.size
   val extinctSpecies = initialSpecies - finalSpecies
   val speciesSurvivalRate = (finalSpecies.toDouble / initialSpecies) * 100
@@ -108,10 +108,10 @@ object OneSimulation extends App:
     private val worldParameters: WorldParameters =  
         WorldParameters(
             numberOfSpecies = 200,
-            connectanceMetaWeb = 0.2,
-            areaOverlap = 10.0,
-            medianHomeRange = 0.1,
-            avgPopulationsPerTile = 2,
+            connectanceMetaWeb = 0.4,
+            areaOverlap = 50.0,
+            medianHomeRange = 0.05,
+            avgPopulationsPerTile = 50,
         )   
 
     private val conservationParameters: ConservationParameters =

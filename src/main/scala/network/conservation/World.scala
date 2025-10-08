@@ -51,21 +51,31 @@ case class World(
   def secondaryExtinctions(): (World, Int) =
 
     @tailrec
-    def extinctionCascades(populationWeb: DefaultDirectedGraph[Population, DefaultEdge], populations: Seq[Population], nCascades: Int):
-      (DefaultDirectedGraph[Population,DefaultEdge], Seq[Population], Int) =
+    def extinctionCascades(
+      populationWeb: DefaultDirectedGraph[Population, DefaultEdge], 
+      populations: Seq[Population], 
+      nCascades: Int
+    ): (DefaultDirectedGraph[Population,DefaultEdge], Seq[Population], Int) =
 
-      val (extinguishVertices, extinguishIds) = this.populationWeb.vertexSet().asScala
+      
+      val (extinguishVertices, extinguishIds) = populationWeb.vertexSet().asScala
         .collect {
-          case p if p.species.trophicLevel>0 & this.populationWeb.outDegreeOf(p) == 0 => (p, (p.species.id, p.id))
+          case p if p.species.trophicLevel > 0 && populationWeb.outDegreeOf(p) == 0 => 
+            (p, (p.id, p.species.id))  
         }.unzip
 
-      if extinguishIds.isEmpty
-      then (populationWeb, populations, nCascades)
-   
+      if extinguishIds.isEmpty then
+        (populationWeb, populations, nCascades)
       else {
+        println(s"  Cascade ${nCascades + 1}: Removing ${extinguishVertices.size} predators without prey")
+        
         val newPopulationWeb: Boolean = populationWeb.removeAllVertices(extinguishVertices.asJavaCollection)
-        // If this is slow consider making populations a Map[Id,Pop]
-        val newPopulations = populations.map(p => if extinguishIds.contains((p.species.id,p.id)) then p.extinguish else p)
+        
+        // BUG FIX #2: Use consistent tuple order (popId, speciesId)
+        val newPopulations = populations.map { p => 
+          if extinguishIds.contains((p.id, p.species.id)) then p.extinguish else p
+        }
+        
         val newNCascades = nCascades + 1
 
         extinctionCascades(populationWeb, newPopulations, newNCascades)
@@ -73,10 +83,10 @@ case class World(
 
     val (newPopulationWeb, newPopulations, nCascades) = extinctionCascades(this.populationWeb, this.populations, 0)
 
-    val extinctPopulations = newPopulations.collect{case p if p.extinct => (p.species.id,p.id) }
+    val extinctPopulations = newPopulations.collect{case p if p.extinct => (p.id, p.species.id) }
     val newManagementLandscape = this.managementLandscape.updatePersistentPopulations(extinctPopulations)
 
-    (this.copy(populations = newPopulations, populationWeb = newPopulationWeb, managementLandscape = newManagementLandscape) , nCascades)
+    (this.copy(populations = newPopulations, populationWeb = newPopulationWeb, managementLandscape = newManagementLandscape), nCascades)
     
   def extinctions(): (World,Int) =
     // First extinguish populations that cannot subsist, then extinguish according to protection plan and then simulate the cascading secondary extinctions.
@@ -129,17 +139,25 @@ object World:
 
     //println("Generating interaction network.")
     val populationWeb = PopulationWebGenerator.generatePopulationWeb(populations, metaWeb)
-      
-    //println("Removing isolated populations.")
-  
+
+    // TODO: check if this is true  
     // Update populations given that the non interacting ones are removed from the network
     val populationsInit = populationWeb.vertexSet().asScala.toSeq
+    println("npops: " + populationsInit.size)
+
 
     //println("Creating management landscape.")
     val managementLandscape = ManagementLandscape(landscapeGrid, populationsInit, rnd).applyProtectionPlan(conservationParameters,rnd)
 
     //println("Initializing world.")
-    new World(populationsInit, managementLandscape, metaWeb, populationWeb, worldParameters, conservationParameters, rnd)
+    val unstableWorld = new World(populationsInit, managementLandscape, metaWeb, populationWeb, worldParameters, conservationParameters, rnd)
+
+    val (stableWorld,nCascades) = unstableWorld.secondaryExtinctions()
+
+    println("cascades: " + nCascades)
+    println("n pops 2:" + stableWorld.populations.count(!_.extinct))
+
+    stableWorld
 
 
   private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, medianHomeRange: Double, rnd: Random):
@@ -156,15 +174,42 @@ object World:
 
       val nicheValuesMax = nicheValues.max
     
+      // val localDensities = nicheValues.zipWithIndex.map { (n, i) =>
+      //  val neighbors = nicheValues.filter(x => math.abs(x - n) < 0.1)
+      //   neighbors.size / 0.2  // Density in window around niche
+      // }
+
       // Feeding range from beta distribution. The species with the lowest niche value is set to be a basal species: feedingRange = 0
-      val beta = 0.5 / connectance - 1 // how to explain this?? 
+      val beta = (0.5 / connectance - 1) // how to explain this?? 
+      
+      // val feedingRange = nicheValues.zip(localDensities).zipWithIndex.map { 
+      //   case ((n, density), i) =>
+      //     if (i > 0) {
+      //       val baseRange = n * BetaDistribution(1, beta).sample()
+      //       baseRange / density  // Scale by local density
+      //     } else 0.0
+      // }
+
       val feedingRange =
         nicheValues.zipWithIndex.map(
           (n, i) => if i > 0 then n * BetaDistribution(1, beta).sample() else 0.0
         )
 
-      val fRangeMax = feedingRange.max
-      val fRangeMin = feedingRange.min
+      // val feedingRange = nicheValues.zipWithIndex.map { (n, i) =>
+      //   if (i > 0) {
+      //     val rawRange = n * BetaDistribution(1, adjustedBeta).sample()
+          
+      //     // Calculate maximum feasible range given feeding center constraints
+      //     // For the feeding center calculation to work: 0.5*r ≤ min(n, 1-0.5*r)
+      //     // This gives us: r ≤ min(2n, 1.0)
+      //     val maxFeasibleRange = math.min(2 * n, 1.0)*0.99
+          
+      //     // Apply ecological constraint
+      //     math.min(rawRange, maxFeasibleRange)
+      //   } else {
+      //     0.0  // Basal species
+      //   }
+      // }
 
       // Feeding center is drawn from uniform distribution between the feeding range.
       val feedingCenter =
@@ -285,6 +330,9 @@ object World:
         val newInteraction = metaWebDef.addEdge(predatorSpecies, preySpecies, DefaultEdge())
       }
     }
+
+    val finalConnectance = metaWebDef.edgeSet().size().toDouble / (metaWebDef.vertexSet().size() * (metaWebDef.vertexSet().size() - 1))
+    println(f"Generated metaweb connectance: ${finalConnectance}%.4f (target: ${connectance}%.4f)")
     
     metaWebDef
 
