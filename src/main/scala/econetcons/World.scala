@@ -1,4 +1,4 @@
-package network.conservation
+package econetcons
 
 import scala.util.Random
 import org.jgrapht.*
@@ -14,8 +14,6 @@ import scala.jdk.CollectionConverters.*
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.Polygon
 
-import network.conservation.SquareGrid
-
 
 case class World(
   populations: Seq[Population], 
@@ -26,6 +24,25 @@ case class World(
   conservationParameters: ConservationParameters, 
   rnd: Random
 ):
+
+  def getSpeciesRichness(): Int =
+    this.populations.filter(!_.extinct).map(_.species.id).toSet.size
+
+  def getInteractionsRichness(): Int =
+    val speciesInteractions = scala.collection.mutable.Set[(Int, Int)]()
+
+    this.populationWeb.vertexSet().asScala.foreach { predatorPop =>
+      this.populationWeb.outgoingEdgesOf(predatorPop).asScala.foreach { edge =>
+        val preyPop = this.populationWeb.getEdgeTarget(edge)
+        val predatorSpeciesId = predatorPop.species.id
+        val preySpeciesId = preyPop.species.id
+
+        // Store as ordered pair to represent directed interaction
+        speciesInteractions += ((predatorSpeciesId, preySpeciesId))
+      }
+    }
+
+    speciesInteractions.size
 
   def primaryExtinctions(): World =
    
@@ -147,15 +164,19 @@ object World:
 
 
     //println("Creating management landscape.")
-    val managementLandscape = ManagementLandscape(landscapeGrid, populationsInit, rnd).applyProtectionPlan(conservationParameters,rnd)
-
+    val managementLandscape = ManagementLandscape(
+      landscapeGrid,
+      populationsInit,
+      populationWeb, // Add this parameter
+      rnd
+    ).applyProtectionPlan(conservationParameters, rnd)
     //println("Initializing world.")
     val unstableWorld = new World(populationsInit, managementLandscape, metaWeb, populationWeb, worldParameters, conservationParameters, rnd)
 
     val (stableWorld,nCascades) = unstableWorld.secondaryExtinctions()
 
-    println("cascades: " + nCascades)
-    println("n pops 2:" + stableWorld.populations.count(!_.extinct))
+    //println("cascades: " + nCascades)
+    //println("n pops 2:" + stableWorld.populations.count(!_.extinct))
 
     stableWorld
 

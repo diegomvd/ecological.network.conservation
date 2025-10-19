@@ -1,4 +1,4 @@
-package network.conservation
+package econetcons
 
 import org.locationtech.jts.geom.{Coordinate,Geometry}
 

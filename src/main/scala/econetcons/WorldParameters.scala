@@ -1,4 +1,4 @@
-package network.conservation
+package econetcons
 
 import ProtectionStatus.{Protected, Unprotected}
 
@@ -12,7 +12,7 @@ case class WorldParameters(
 
   def extinctionProbability(status: ProtectionStatus): Double =
     status match
-      case Protected => 0.0
-      case Unprotected => 0.0
+      case Protected => 0.01
+      case Unprotected => 0.25
       case null => 0.0
 

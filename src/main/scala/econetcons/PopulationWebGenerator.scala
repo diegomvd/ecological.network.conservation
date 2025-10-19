@@ -1,12 +1,10 @@
-package network.conservation
+package econetcons
 
 import scala.util.Random
 import org.jgrapht.*
 import org.jgrapht.graph.*
 import org.locationtech.jts.geom.Coordinate
 import scala.jdk.CollectionConverters.*
-
-import network.conservation.SquareGrid
 
 object PopulationWebGenerator:
 

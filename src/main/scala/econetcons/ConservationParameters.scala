@@ -1,4 +1,4 @@
-package network.conservation 
+package econetcons
 
 case class ConservationParameters(
     fractionProtected: Double = 0.3,

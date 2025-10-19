@@ -1,4 +1,4 @@
-package network.conservation
+package econetcons
 
 enum ProtectionStatus:
   case Protected, Unprotected

@@ -1,4 +1,4 @@
-package network.conservation
+package econetcons
 
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
 

@@ -1,9 +1,8 @@
-package network.conservation
+package econetcons
 
 import org.locationtech.jts.geom.Coordinate
 import scala.annotation.tailrec
 import scala.util.Random
-import network.conservation.SquareGrid
 
 
 object Utils:

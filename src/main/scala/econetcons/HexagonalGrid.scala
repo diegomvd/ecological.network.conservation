@@ -1,4 +1,4 @@
-package network.conservation
+package econetcons
 
 import scala.math.max
 import scala.math.min
