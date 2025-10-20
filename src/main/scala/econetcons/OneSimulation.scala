@@ -118,10 +118,10 @@ object OneSimulation extends App:
         ConservationParameters(
             fractionProtected = 0.3,
             conservationIntensity = 1.0,
-            strategyConnectivity = 0.33,
+            strategyConnectivity = 0.0,
             strategySpeciesRichness = 0.9,
             strategyInteractionRichness = 0.09,
-            strategyAbundance = 0.8
+            strategyAbundance = 0.0
         )        
 
     // Initialize the World
@@ -139,8 +139,11 @@ object OneSimulation extends App:
     val initialIR = initialWorld.getInteractionsRichness()
     val finalIR = finalWorld.getInteractionsRichness()
 
-    val speciesExtinctions = (initialSR - finalSR) / initialSR * 100.0
-    val interactionExtinctions = (initialIR - finalIR) / initialIR * 100.0
+    println(initialIR)
+    println(finalIR)
+
+    val speciesExtinctions = (initialSR.toDouble - finalSR.toDouble) / initialSR.toDouble * 100.0
+    val interactionExtinctions = (initialIR.toDouble - finalIR.toDouble) / initialIR.toDouble * 100.0
 
     println("Species extinctions")
     println(speciesExtinctions)

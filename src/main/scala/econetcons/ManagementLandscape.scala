@@ -36,7 +36,13 @@ case class ManagementLandscape(
       newConnectivity
 
     def scalingMinMax(value: Double, min: Double, max: Double): Double =
-      (value - min) / (max - min)
+      if (max - min < 1e-10) {
+        // All values are effectively equal - return neutral score
+        // This handles the connectivity=0 case and any other uniform distributions
+        0.5
+      } else {
+        (value - min) / (max - min)
+      }
 
     @tailrec
     def protectionRecursion(
@@ -48,32 +54,38 @@ case class ManagementLandscape(
                              remainingTiles: Int
                            ): Seq[ManagementArea] =
 
-      if !(remainingTiles > 0) then
+      // Guard: stop if no tiles remain or no more areas to protect
+      if (remainingTiles <= 0 || areasSpeciesRichness.isEmpty) then
         managementAreas
       else
 
-        // Each tile is associate with a score that is a weighted combination of species richness, connectivity, interaction richness and abundance.
+        // Each tile is associated with a score that is a weighted combination of
+        // species richness, connectivity, interaction richness and abundance.
         // Each component is scaled to be between 0 and 1
 
         // Prioritization contribution of species richness
         val maxSpeciesRichness = areasSpeciesRichness.values.max.toDouble
         val minSpeciesRichness = areasSpeciesRichness.values.min.toDouble
-        val biodivConservationProbability: Map[Int,Double] = areasSpeciesRichness.map(x => (x._1, scalingMinMax(x._2, minSpeciesRichness, maxSpeciesRichness)))
+        val biodivConservationProbability: Map[Int,Double] =
+          areasSpeciesRichness.map(x => (x._1, scalingMinMax(x._2, minSpeciesRichness, maxSpeciesRichness)))
 
         // Prioritization contribution of connectivity
         val maxNeighbors = areasConnectivity.values.max.toDouble
         val minNeighbors = areasConnectivity.values.min.toDouble
-        val connectivityConservationProbability: Map[Int,Double] = areasConnectivity.map(x => (x._1, scalingMinMax(x._2, minNeighbors, maxNeighbors)))
+        val connectivityConservationProbability: Map[Int,Double] =
+          areasConnectivity.map(x => (x._1, scalingMinMax(x._2, minNeighbors, maxNeighbors)))
 
         // Prioritization contribution of interaction richness
         val maxInteractionRichness = areasInteractionRichness.values.max.toDouble
         val minInteractionRichness = areasInteractionRichness.values.min.toDouble
-        val interactionConservationProbability: Map[Int,Double] = areasInteractionRichness.map(x => (x._1, scalingMinMax(x._2, minInteractionRichness, maxInteractionRichness)))
+        val interactionConservationProbability: Map[Int,Double] =
+          areasInteractionRichness.map(x => (x._1, scalingMinMax(x._2, minInteractionRichness, maxInteractionRichness)))
 
         // Prioritization contribution of abundance
         val maxAbundance = areasAbundance.values.max.toDouble
         val minAbundance = areasAbundance.values.min.toDouble
-        val abundanceConservationProbability: Map[Int,Double] = areasAbundance.map(x => (x._1, scalingMinMax(x._2, minAbundance, maxAbundance)))
+        val abundanceConservationProbability: Map[Int,Double] =
+          areasAbundance.map(x => (x._1, scalingMinMax(x._2, minAbundance, maxAbundance)))
 
         val totalConservationProbability: Map[Int,Double] = biodivConservationProbability.map(
           bio =>
@@ -84,17 +96,37 @@ case class ManagementLandscape(
                 + conservationParameters.weightAbundance * abundanceConservationProbability.getOrElse(bio._1, 0.0))
         )
 
-        val tileId: Int = Utils.chooseStochasticEvent(totalConservationProbability, rnd)
+        // Guard: ensure we have valid probabilities
+        if (totalConservationProbability.isEmpty) then
+          println("Warning: No valid tiles to protect. Stopping early.")
+          managementAreas
+        else
+          val tileId: Int = Utils.chooseStochasticEvent(totalConservationProbability, rnd)
 
-        val newAreasSpeciesRichness = areasSpeciesRichness.filterNot(_._1 == tileId)
-        val newAreasConnectivity = updateConnectivity(areasConnectivity, tileId)
-        val newAreasInteractionRichness = areasInteractionRichness.filterNot(_._1 == tileId)
-        val newAreasAbundance = areasAbundance.filterNot(_._1 == tileId)
-        val newManagementAreas = managementAreas.map {
-          a => if a.id == tileId then a.updateProtectionStatus() else a
-        }
+          // Guard: handle failed selection (should never happen with robust chooseStochasticEvent)
+          if (tileId == -1) then
+            println(s"Warning: Tile selection failed with ${remainingTiles} tiles remaining.")
+            println(s"  Available areas: ${areasSpeciesRichness.size}")
+            println(s"  Probability map size: ${totalConservationProbability.size}")
+            println(s"  Total probability sum: ${totalConservationProbability.values.sum}")
+            managementAreas
+          else
+            val newAreasSpeciesRichness = areasSpeciesRichness.filterNot(_._1 == tileId)
+            val newAreasConnectivity = updateConnectivity(areasConnectivity, tileId)
+            val newAreasInteractionRichness = areasInteractionRichness.filterNot(_._1 == tileId)
+            val newAreasAbundance = areasAbundance.filterNot(_._1 == tileId)
+            val newManagementAreas = managementAreas.map {
+              a => if a.id == tileId then a.updateProtectionStatus() else a
+            }
 
-        protectionRecursion(newManagementAreas, newAreasSpeciesRichness, newAreasConnectivity, newAreasInteractionRichness, newAreasAbundance, remainingTiles-1)
+            protectionRecursion(
+              newManagementAreas,
+              newAreasSpeciesRichness,
+              newAreasConnectivity,
+              newAreasInteractionRichness,
+              newAreasAbundance,
+              remainingTiles - 1
+            )
 
     val nTiles: Int = (this.managementAreas.size * conservationParameters.fractionProtected).toInt
 
@@ -103,7 +135,14 @@ case class ManagementLandscape(
     val areasInteractionRichness: Map[Int,Int] = this.managementAreas.map(a => (a.id, a.getInteractionRichness(this.populationWeb))).toMap
     val areasAbundance: Map[Int,Int] = this.managementAreas.map(a => (a.id, a.getAbundance)).toMap
 
-    val newManagementAreas: Seq[ManagementArea] = protectionRecursion(this.managementAreas, areasSpeciesRichness, areasConnectivity, areasInteractionRichness, areasAbundance, nTiles)
+    val newManagementAreas: Seq[ManagementArea] = protectionRecursion(
+      this.managementAreas,
+      areasSpeciesRichness,
+      areasConnectivity,
+      areasInteractionRichness,
+      areasAbundance,
+      nTiles
+    )
 
     this.copy(managementAreas = newManagementAreas)
 
