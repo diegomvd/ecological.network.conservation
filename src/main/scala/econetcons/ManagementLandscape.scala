@@ -21,19 +21,13 @@ case class ManagementLandscape(
     Protection plan to preserve maximum number of species.
     */
     def updateConnectivity(areasConnectivity: Map[Int,Int], tileId: Int): Map[Int,Int] =
-      // Use the stored grid instance to get neighbors
+      // Only the ~8 Moore neighbors of the just-selected tile change; touch just those
+      // instead of scanning every remaining tile (O(8) instead of O(remaining tiles)).
       val neighbors: Seq[Int] = grid.neighbors(tileId)
-
-      val newConnectivity: Map[Int,Int] = areasConnectivity
-        .filterNot(_._1 == tileId)  // Remove selected tile
-        .map { case (areaId, currentCount) =>
-          if (neighbors.contains(areaId))
-            (areaId, currentCount + 1)  // Increment for neighbors
-          else
-            (areaId, currentCount)      // Keep same count for non-neighbors
-        }
-
-      newConnectivity
+      val withoutSelected: Map[Int,Int] = areasConnectivity - tileId
+      neighbors.foldLeft(withoutSelected) { (acc, nbrId) =>
+        acc.get(nbrId).map(c => acc.updated(nbrId, c + 1)).getOrElse(acc)
+      }
 
     def scalingMinMax(value: Double, min: Double, max: Double): Double =
       if (max - min < 1e-10) {
@@ -131,8 +125,72 @@ case class ManagementLandscape(
           quota - 1
         )
 
+    // Pick the highest-scoring tile; ties are broken randomly (consistent with the
+    // greedy complementarity/species recursions above, and keeps rnd usage predictable).
+    def chooseArgmax(scores: Map[Int,Double]): Int =
+      val maxScore = scores.values.max
+      val candidates = scores.collect { case (id, s) if s >= maxScore - 1e-12 => id }.toSeq
+      candidates(rnd.nextInt(candidates.size))
+
+    // Static per-tile score contribution from species richness, interaction richness and
+    // abundance. Their RAW values never change during the recursion, only which tiles
+    // remain. Under Argmax selection the min-max scaling is a positive affine transform,
+    // so it does not change the ranking of tiles — hence for single-criterion strategies
+    // (all sweep strategies) scoring against fixed global min/max is exactly equivalent to
+    // rescaling each step, and we can precompute it once here. (This equivalence does NOT
+    // hold for the roulette-wheel Stochastic path, which uses score magnitudes and keeps
+    // recomputing per-step below.)
+    def staticScoreFor(areas: Seq[ManagementArea], areasSpeciesRichness: Map[Int,Int],
+                       areasInteractionRichness: Map[Int,Int], areasAbundance: Map[Int,Int]): Map[Int,Double] =
+      val srVals = areasSpeciesRichness.values
+      val (minSR, maxSR) = (srVals.min.toDouble, srVals.max.toDouble)
+      val irVals = areasInteractionRichness.values
+      val (minIR, maxIR) = (irVals.min.toDouble, irVals.max.toDouble)
+      val abVals = areasAbundance.values
+      val (minAB, maxAB) = (abVals.min.toDouble, abVals.max.toDouble)
+      areas.map { a =>
+        val s =
+          conservationParameters.weightSpeciesRichness * scalingMinMax(areasSpeciesRichness(a.id), minSR, maxSR) +
+          conservationParameters.weightInteractionRichness * scalingMinMax(areasInteractionRichness(a.id), minIR, maxIR) +
+          conservationParameters.weightAbundance * scalingMinMax(areasAbundance(a.id), minAB, maxAB)
+        a.id -> s
+      }.toMap
+
+    // Argmax recursion: only connectivity changes per step, so only it is rescaled here;
+    // the static SR/IR/abundance contribution is precomputed once and threaded through.
     @tailrec
-    def protectionRecursion(
+    def protectionRecursionArgmax(
+                                   managementAreas: Seq[ManagementArea],
+                                   staticScore: Map[Int,Double],
+                                   areasConnectivity: Map[Int,Int],
+                                   remainingTiles: Int
+                                 ): Seq[ManagementArea] =
+      if remainingTiles <= 0 || staticScore.isEmpty then managementAreas
+      else
+        val totalScore: Map[Int,Double] =
+          if conservationParameters.weightConnectivity == 0.0 then staticScore
+          else
+            val maxNeighbors = areasConnectivity.values.max.toDouble
+            val minNeighbors = areasConnectivity.values.min.toDouble
+            staticScore.map { case (id, s) =>
+              id -> (s + conservationParameters.weightConnectivity *
+                scalingMinMax(areasConnectivity.getOrElse(id, 0), minNeighbors, maxNeighbors))
+            }
+
+        val tileId = chooseArgmax(totalScore)
+        val newManagementAreas = managementAreas.map(a => if a.id == tileId then a.updateProtectionStatus() else a)
+        protectionRecursionArgmax(
+          newManagementAreas,
+          staticScore.removed(tileId),
+          updateConnectivity(areasConnectivity, tileId),
+          remainingTiles - 1
+        )
+
+    // Legacy roulette-wheel recursion. Kept bit-for-bit as the original: min/max for all
+    // four components are recomputed over the remaining tiles each step, because the
+    // stochastic sampling depends on score magnitudes, not just ranking.
+    @tailrec
+    def protectionRecursionStochastic(
                              managementAreas: Seq[ManagementArea],
                              areasSpeciesRichness: Map[Int,Int],
                              areasConnectivity: Map[Int,Int],
@@ -215,7 +273,7 @@ case class ManagementLandscape(
               a => if a.id == tileId then a.updateProtectionStatus() else a
             }
 
-            protectionRecursion(
+            protectionRecursionStochastic(
               newManagementAreas,
               newAreasSpeciesRichness,
               newAreasConnectivity,
@@ -226,6 +284,13 @@ case class ManagementLandscape(
 
     val totalTiles: Int = this.managementAreas.size
     val nTiles: Int = (totalTiles * conservationParameters.fractionProtected).toInt
+
+    // Build the population-id -> Population lookup once for O(1) access in
+    // getInteractionRichness (replaces a linear vertexSet scan per population).
+    // Valid only for this call, where populationWeb matches the tiles just built.
+    // Do NOT reuse across a World state transition (e.g. after extinctions).
+    val idToPop: Map[Int, Population] =
+      this.populationWeb.vertexSet().asScala.map(p => p.id -> p).toMap
 
     // Precompute species rarity scores across ALL areas (once, landscape-level)
     // score(tile) = sum over species s in tile of 1 / (number of tiles containing s)
@@ -275,9 +340,16 @@ case class ManagementLandscape(
           if conservationParameters.isEgocentricInteractionRichnessProtection then
             areas.map(a => (a.id, a.getEgocentricInteractionRichness(this.populationWeb))).toMap
           else
-            areas.map(a => (a.id, a.getInteractionRichness(this.populationWeb))).toMap
+            areas.map(a => (a.id, a.getInteractionRichness(this.populationWeb, idToPop))).toMap
         val areasAbundance: Map[Int,Int]       = areas.map(a => (a.id, a.getAbundance)).toMap
-        protectionRecursion(areas, areasSpeciesRichness, areasConnectivity, areasInteractionRichness, areasAbundance, quota)
+        conservationParameters.tileSelection match
+          case TileSelection.Argmax =>
+            // Random strategy has all weights 0 -> staticScore all zero -> every tile ties
+            // -> chooseArgmax picks uniformly at random, matching the stochastic uniform path.
+            val staticScore = staticScoreFor(areas, areasSpeciesRichness, areasInteractionRichness, areasAbundance)
+            protectionRecursionArgmax(areas, staticScore, areasConnectivity, quota)
+          case TileSelection.Stochastic =>
+            protectionRecursionStochastic(areas, areasSpeciesRichness, areasConnectivity, areasInteractionRichness, areasAbundance, quota)
 
     val nRegions = conservationParameters.nAdminRegions
 
@@ -371,12 +443,14 @@ object ManagementLandscape:
              rnd: Random
            ): ManagementLandscape =
 
+    // Group populations by their tile once (O(P)) instead of scanning all P
+    // populations for each of nTiles cells (O(nTiles * P)).
+    val populationsByTile: Map[Int, Seq[Population]] =
+      populations.groupBy(p => landscapeGrid.coordToCell(p.coordinates))
+
     // Create management areas using cell indices instead of polygons
     val areas = landscapeGrid.cellIndices.map { cellId =>
-      // Find populations in this cell using coordinate-to-cell mapping
-      val pops = populations.collect {
-        case p if landscapeGrid.coordToCell(p.coordinates) == cellId => (p.id, p.species.id)
-      }
+      val pops = populationsByTile.getOrElse(cellId, Seq.empty).map(p => (p.id, p.species.id))
       ManagementArea(cellId, ProtectionStatus.Unprotected, pops.toMap)
     }
 

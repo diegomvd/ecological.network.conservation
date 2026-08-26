@@ -6,7 +6,7 @@ object TestDiagnostics extends App:
   val currentParams = WorldParameters(
     numberOfSpecies = 200,
     connectanceMetaWeb = 0.4,
-    areaOverlap = 20.0,
+    nPopulations = 2500,
     medianHomeRange = 0.05,
     avgPopulationsPerTile = 10
   )

@@ -43,13 +43,9 @@ object UltraFineProtectionSweep extends App:
     val worldParameters = WorldParameters(
       numberOfSpecies = 200,
       connectanceMetaWeb = 0.4,
-      areaOverlap = 20.0,
+      nPopulations = 2500,
       medianHomeRange = 0.05,
-      avgPopulationsPerTile = 5,
-      useThinning = false,
-      spreadingFactor = 0.5,
-      useHotspot = true,
-      hotspotVariance = 0.3  // High variance
+      avgPopulationsPerTile = 5
     )
 
     val conservationParameters = ConservationParameters(

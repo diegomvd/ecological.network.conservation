@@ -32,14 +32,19 @@ case class ManagementArea(id: Int, status: ProtectionStatus, populations: Map[In
   def getSpeciesRichness: Int =
     this.getSpecies.size
 
-  def getInteractionRichness(populationWeb: DefaultDirectedGraph[Population, DefaultEdge]): Int =
+  // `idToPop` maps population id -> Population for O(1) lookup, replacing a linear
+  // scan over populationWeb.vertexSet(). It MUST be built from the same populationWeb
+  // passed here (see call site in ManagementLandscape.applyProtectionPlan). Do not
+  // cache it stale across a World state transition (e.g. after extinctions) — rebuild
+  // it from whatever populationWeb is current at the call.
+  def getInteractionRichness(populationWeb: DefaultDirectedGraph[Population, DefaultEdge], idToPop: Map[Int, Population]): Int =
     val speciesInteractions = scala.collection.mutable.Set[(Int, Int)]()
     val populationIds = this.populations.keySet
 
     // Check all populations in this management area
     populationIds.foreach { popId =>
       // Find this population in the graph
-      populationWeb.vertexSet().asScala.find(_.id == popId).foreach { predatorPop =>
+      idToPop.get(popId).foreach { predatorPop =>
         // Only count if predator is not extinct
         if (!predatorPop.extinct) {
           // Check its outgoing edges (prey relationships)
@@ -60,6 +65,11 @@ case class ManagementArea(id: Int, status: ProtectionStatus, populations: Map[In
     }
 
     speciesInteractions.size
+
+  // Backward-compatible overload for diagnostic callers that don't hold an idToPop map.
+  // Builds the map from the graph on the fly (O(P)); not for hot-path/sweep use.
+  def getInteractionRichness(populationWeb: DefaultDirectedGraph[Population, DefaultEdge]): Int =
+    getInteractionRichness(populationWeb, populationWeb.vertexSet().asScala.map(p => p.id -> p).toMap)
 
   def getInteractions(populationWeb: DefaultDirectedGraph[Population, DefaultEdge]): Set[(Int, Int)] =
     val speciesInteractions = scala.collection.mutable.Set[(Int, Int)]()

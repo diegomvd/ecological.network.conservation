@@ -30,7 +30,13 @@ case class ConservationParameters(
 
     // Number of administrative regions (must be a perfect square >= 1)
     // 1 = global selection (current behaviour); >1 = each region selects independently
-    nAdminRegions: Int = 1
+    nAdminRegions: Int = 1,
+
+    // Rule for picking the next tile in the weighted-criteria protection recursion.
+    // Argmax (default) deterministically protects the highest-scoring tile; Stochastic
+    // reproduces the legacy roulette-wheel sampling. Does not affect the greedy
+    // complementarity / rarity strategies, which have their own selection rules.
+    tileSelection: TileSelection = TileSelection.Argmax
 ) {
 
   // Determine actual weights based on simplified strategy or manual weights

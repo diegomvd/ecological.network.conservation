@@ -33,7 +33,7 @@ object ParameterDiagnostics:
       println("\n--- INPUT PARAMETERS ---")
       println(f"  Number of species: ${params.numberOfSpecies}")
       println(f"  Target metaweb connectance: ${params.connectanceMetaWeb}%.3f")
-      println(f"  Area overlap: ${params.areaOverlap}%.2f")
+      println(f"  Number of populations: ${params.nPopulations}")
       println(f"  Median home range (radius): ${params.medianHomeRange}%.4f")
       println(f"  Avg populations per tile: ${params.avgPopulationsPerTile}")
 
@@ -69,9 +69,9 @@ object ParameterDiagnostics:
    */
   def diagnose(params: WorldParameters): DiagnosticReport =
 
-    // Calculate derived quantities (same as in World.apply)
-    val numberOfPopulations =
-      (params.areaOverlap / (params.medianHomeRange * params.medianHomeRange)).toInt
+    // Derived quantities (same as in World.apply): population count is now a direct
+    // parameter; management-grid resolution derives from it.
+    val numberOfPopulations = params.nPopulations
 
     val nTiles = (numberOfPopulations.toDouble / params.avgPopulationsPerTile.toDouble).toInt
 
@@ -117,17 +117,6 @@ object ParameterDiagnostics:
   ): Map[String, (Boolean, String)] =
 
     Map(
-      "Area overlap" -> {
-        val reasonable = params.areaOverlap >= 2.0 && params.areaOverlap <= 20.0
-        val msg = if reasonable then
-          f"${params.areaOverlap}%.1f is in reasonable range [2, 20]"
-        else if params.areaOverlap < 2.0 then
-          f"${params.areaOverlap}%.1f is too low - populations may be too sparse"
-        else
-          f"${params.areaOverlap}%.1f is too high - too much overlap, consider reducing"
-        (reasonable, msg)
-      },
-
       "Populations per species" -> {
         val reasonable = avgPopsPerSpecies >= 10.0 && avgPopsPerSpecies <= 100.0
         val msg = if reasonable then
@@ -195,11 +184,8 @@ object ParameterDiagnostics:
     medianHomeRange: Double = 0.01
   ): WorldParameters =
 
-    // Work backwards from targets
+    // Work backwards from targets: population count is now a direct parameter.
     val numberOfPopulations = targetSpecies * targetPopsPerSpecies
-
-    // Calculate areaOverlap from desired number of populations
-    val areaOverlap = numberOfPopulations * medianHomeRange * medianHomeRange
 
     // Calculate grid size such that tile size = targetTileSize × home range diameter
     val homeRangeDiameter = 2.0 * medianHomeRange
@@ -213,7 +199,7 @@ object ParameterDiagnostics:
     WorldParameters(
       numberOfSpecies = targetSpecies,
       connectanceMetaWeb = 0.2,  // Keep moderate
-      areaOverlap = areaOverlap,
+      nPopulations = numberOfPopulations,
       medianHomeRange = medianHomeRange,
       avgPopulationsPerTile = avgPopulationsPerTile
     )
@@ -226,21 +212,21 @@ object ParameterDiagnostics:
     println("PARAMETER SWEEP - Testing different configurations")
     println("=" * 80)
 
-    val areaOverlapValues = Seq(2.0, 5.0, 10.0, 20.0, 50.0)
+    val nPopulationsValues = Seq(500, 1000, 2500, 5000, 10000)
     val speciesValues = Seq(50, 100, 200)
     val homeRangeValues = Seq(0.005, 0.01, 0.02, 0.05)
 
-    println(f"\n${"AreaOverlap"}%-12s ${"Species"}%-10s ${"HomeRange"}%-12s ${"Pops"}%-8s ${"PopsPerSp"}%-12s ${"Tiles"}%-8s ${"TileSize(HR)"}%-15s ${"Checks"}%-8s")
+    println(f"\n${"nPops"}%-12s ${"Species"}%-10s ${"HomeRange"}%-12s ${"Pops"}%-8s ${"PopsPerSp"}%-12s ${"Tiles"}%-8s ${"TileSize(HR)"}%-15s ${"Checks"}%-8s")
     println("-" * 110)
 
     for
-      areaOverlap <- areaOverlapValues
+      nPops <- nPopulationsValues
       species <- speciesValues
       homeRange <- homeRangeValues
     do
       val params = WorldParameters(
         numberOfSpecies = species,
-        areaOverlap = areaOverlap,
+        nPopulations = nPops,
         medianHomeRange = homeRange,
         avgPopulationsPerTile = 20
       )
@@ -250,6 +236,6 @@ object ParameterDiagnostics:
       val totalChecks = report.checks.size
       val checkStatus = f"$passedChecks/$totalChecks"
 
-      println(f"${areaOverlap}%-12.1f ${species}%-10d ${homeRange}%-12.4f ${report.numberOfPopulations}%-8d ${report.avgPopsPerSpecies}%-12.1f ${report.nTiles}%-8d ${report.tileSizeInHomeRanges}%-15.1f $checkStatus%-8s")
+      println(f"${nPops}%-12d ${species}%-10d ${homeRange}%-12.4f ${report.numberOfPopulations}%-8d ${report.avgPopsPerSpecies}%-12.1f ${report.nTiles}%-8d ${report.tileSizeInHomeRanges}%-15.1f $checkStatus%-8s")
 
 end ParameterDiagnostics
