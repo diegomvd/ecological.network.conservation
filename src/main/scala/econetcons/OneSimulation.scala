@@ -109,11 +109,9 @@ object OneSimulation extends App:
         WorldParameters(
             numberOfSpecies                  = 200,
             connectanceMetaWeb               = 0.4,
-            areaOverlap                      = 20.0,
+            nPopulations                     = 2500,
             medianHomeRange                  = 0.05,
             avgPopulationsPerTile            = 5,
-            useThinning                      = false,
-            spreadingFactor                  = 0.5,
             extinctionProbabilityUnprotected = 0.5,  // default: existing behaviour
             dietBreadthThreshold             = 0.0,  // legacy: classic outDegree==0 rule (used when preyPerPredator == 0)
             preyPerPredator                  = 0.0,  // 0.0 = use legacy secondaryExtinctions

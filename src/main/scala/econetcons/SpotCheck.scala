@@ -46,12 +46,9 @@ object SpotCheck extends App:
       val worldParameters = WorldParameters(
         numberOfSpecies                  = 200,
         connectanceMetaWeb               = 0.4,
-        areaOverlap                      = 20.0,
+        nPopulations                     = 2500,
         medianHomeRange                  = 0.05,
         avgPopulationsPerTile            = avgPopulationsPerTile,
-        useThinning                      = false,
-        spreadingFactor                  = 0.5,
-        useHotspot                       = false,
         extinctionProbabilityUnprotected = extinctionProbabilityUnprotected,
         preyPerPredator                  = preyPerPredator,
         observationNoise                 = 0.0,
@@ -156,12 +153,9 @@ object SpotCheck extends App:
     val wp = WorldParameters(
       numberOfSpecies                  = 200,
       connectanceMetaWeb               = 0.4,
-      areaOverlap                      = 20.0,
+      nPopulations                     = 2500,
       medianHomeRange                  = 0.05,
       avgPopulationsPerTile            = avgPopulationsPerTile,
-      useThinning                      = false,
-      spreadingFactor                  = 0.5,
-      useHotspot                       = false,
       extinctionProbabilityUnprotected = extinctionProbabilityUnprotected,
       preyPerPredator                  = noisePPP,
       observationNoise                 = fn,
@@ -206,79 +200,3 @@ object SpotCheck extends App:
 
   println("\n" + "=" * W)
 
-  // ── Spatial aggregation sweep ─────────────────────────────────────────────
-  // Vary numHotspots and aggregationStrength; compare SpeciesRichness vs
-  // SpeciesComplementarity: Jaccard(protected sets) expected to decrease as
-  // aggregation increases (complementarity finds more dispersed tiles).
-
-  val aggSeed     = 42
-  val aggPPP      = 0.5
-  val aggHotspots = Seq(1, 4, 9)
-  val aggStrengths = Seq(0.0, 0.3, 0.7, 1.0)
-  val aggStratSR  = ConservationStrategy.SpeciesRichness
-  val aggStratSC  = ConservationStrategy.SpeciesComplementarity
-
-  println("\n\n" + "=" * W)
-  println(f"  SPATIAL AGGREGATION SWEEP — seed=$aggSeed, preyPerPredator=$aggPPP, fractionProtected=$fractionProtected, p_unprotected=$extinctionProbabilityUnprotected")
-  println("=" * W)
-  println(f"  ${"hotspots"}%8s  ${"strength"}%9s  ${"sp_ext_SR%"}%11s  ${"sp_ext_SC%"}%11s  ${"Jaccard(SR,SC)"}%14s  sanity")
-  println("-" * W)
-
-  for
-    numH <- aggHotspots
-    agg  <- aggStrengths
-  do
-    val wp = WorldParameters(
-      numberOfSpecies                  = 200,
-      connectanceMetaWeb               = 0.4,
-      areaOverlap                      = 20.0,
-      medianHomeRange                  = 0.05,
-      avgPopulationsPerTile            = avgPopulationsPerTile,
-      useThinning                      = false,
-      spreadingFactor                  = 0.5,
-      extinctionProbabilityUnprotected = extinctionProbabilityUnprotected,
-      preyPerPredator                  = aggPPP,
-      numHotspots                      = numH,
-      hotspotVariance                  = 0.02,
-      aggregationStrength              = agg
-    )
-    val baseW = World(
-      worldParameters        = wp,
-      conservationParameters = ConservationParameters(fractionProtected = 0.0, strategy = Some(aggStratSR)),
-      rnd                    = Random(aggSeed)
-    )
-
-    def buildWorld(strat: ConservationStrategy): World =
-      val params = ConservationParameters(fractionProtected = fractionProtected, strategy = Some(strat))
-      baseW.copy(
-        managementLandscape    = baseW.managementLandscape.applyProtectionPlan(params, Random(aggSeed)),
-        conservationParameters = params
-      ).deepCopyForExtinction(Random(aggSeed))
-
-    val srWorld = buildWorld(aggStratSR)
-    val scWorld = buildWorld(aggStratSC)
-
-    val initSR_sr = srWorld.getSpeciesRichness()
-    val initSR_sc = scWorld.getSpeciesRichness()
-
-    val resSR = srWorld.extinctionsDetailed()
-    val resSC = scWorld.extinctionsDetailed()
-
-    val spExtSR = if initSR_sr > 0 then (initSR_sr - resSR.finalWorld.getSpeciesRichness()).toDouble / initSR_sr * 100.0 else 0.0
-    val spExtSC = if initSR_sc > 0 then (initSR_sc - resSC.finalWorld.getSpeciesRichness()).toDouble / initSR_sc * 100.0 else 0.0
-
-    val protSR: Set[Int] = srWorld.managementLandscape.managementAreas
-      .collect { case a if a.status == ProtectionStatus.Protected => a.id }.toSet
-    val protSC: Set[Int] = scWorld.managementLandscape.managementAreas
-      .collect { case a if a.status == ProtectionStatus.Protected => a.id }.toSet
-    val inter  = protSR.intersect(protSC).size.toDouble
-    val union  = protSR.union(protSC).size.toDouble
-    val jaccard = if union == 0.0 then 1.0 else inter / union
-
-    val sanitySR = resSR.primarySpeciesLost + resSR.secondarySpeciesLost == initSR_sr - resSR.finalWorld.getSpeciesRichness()
-    val sanitySC = resSC.primarySpeciesLost + resSC.secondarySpeciesLost == initSR_sc - resSC.finalWorld.getSpeciesRichness()
-    val sanityStr = if sanitySR && sanitySC then "OK" else "FAIL"
-
-    println(f"  $numH%8d  $agg%9.2f  $spExtSR%11.1f  $spExtSC%11.1f  $jaccard%14.3f  $sanityStr")
-
-  println("\n" + "=" * W)

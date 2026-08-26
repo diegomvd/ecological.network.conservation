@@ -1,6 +1,6 @@
 package econetcons
 
-import org.locationtech.jts.geom.{Coordinate, Geometry}
+import org.locationtech.jts.geom.Coordinate
 
 import scala.util.Random
 
@@ -20,43 +20,45 @@ object Population:
     species: Species,
     populationSeq: Seq[Population],
     rnd: Random,
-    worldParameters: WorldParameters,
-    sharedHotspotCenters: Seq[Coordinate] = Seq.empty
+    worldParameters: WorldParameters
   ): Seq[Population] =
 
     val targetPopulations = populationSeq.size
-    val numCenters = 1
 
-    val clusterRadius = species.homeRange * (targetPopulations.toDouble) * worldParameters.spreadingFactor
-
-    // Generate candidates - oversample only if thinning is enabled
-    val numCandidates = if (worldParameters.useThinning) targetPopulations * 4 else targetPopulations
-    val candidates = Utils.generateThomasProcessCandidates(
-      numCandidates,
-      numCenters,
-      clusterRadius,
-      rnd,
-      hotspotCenters      = sharedHotspotCenters,
-      aggregationStrength = worldParameters.aggregationStrength,
-      hotspotVariance     = worldParameters.hotspotVariance
-    )
-
-    // Apply thinning only if enabled
-    val finalCoordinates = if (worldParameters.useThinning) {
-      Utils.adaptiveKRandomThinning(
-        candidates,
-        targetPopulations,
-        species.homeRange * 1.5,
-        0.1, // check 10%
-        rnd
-      )
-    } else {
-      // No thinning - use candidates directly
-      candidates
-    }
+    val finalCoordinates: Seq[Coordinate] =
+      if worldParameters.useBranchingWalk then
+        createPopulationsBranchingWalk(species, targetPopulations, rnd, worldParameters)
+      else
+        createPopulationsThomasLegacy(species, targetPopulations, rnd, worldParameters)
 
     finalCoordinates.zip(populationSeq).map { case (coordinate, population) =>
       population.copy(coordinates = coordinate, extinct = false)
     }
+
+  // Go-forward model: Eden-growth branching random walk. Anchor is a uniform random point;
+  // each subsequent individual is placed a fixed step (= homeRange · spatialSpread) from a
+  // randomly chosen already-placed individual, producing organic, irregular clusters.
+  private def createPopulationsBranchingWalk(
+    species: Species,
+    targetPopulations: Int,
+    rnd: Random,
+    worldParameters: WorldParameters
+  ): Seq[Coordinate] =
+    val anchor = SquareGrid.randomPoint(rnd)
+    val step = worldParameters.placementStep(species.homeRange)
+    Utils.generateBranchingWalk(targetPopulations, anchor, step, rnd)
+
+  // DEPRECATED spatial model — single-center Thomas process (points radiate from one random
+  // center). Retained only so it can be compared against the branching walk during
+  // calibration; remove once the walk is signed off. Cluster radius uses the same
+  // center-radiating geometry the original model had (~ homeRange · N · spatialSpread).
+  private def createPopulationsThomasLegacy(
+    species: Species,
+    targetPopulations: Int,
+    rnd: Random,
+    worldParameters: WorldParameters
+  ): Seq[Coordinate] =
+    val clusterRadius = species.homeRange * targetPopulations.toDouble * worldParameters.spatialSpread
+    Utils.generateThomasProcessCandidates(targetPopulations, 1, clusterRadius, rnd)
 
 end Population

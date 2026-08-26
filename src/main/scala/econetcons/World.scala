@@ -118,8 +118,6 @@ case class World(
       if extinguishIds.isEmpty then
         (populationWeb, populations, nCascades)
       else {
-        println(s"  Cascade ${nCascades + 1}: Removing ${extinguishVertices.size} predators ...")
-
         val _ = populationWeb.removeAllVertices(extinguishVertices.asJavaCollection)
 
         val newPopulations = populations.map { p =>
@@ -331,28 +329,16 @@ object World:
       rnd
     )
 
-    val pi = 3.1416
-    val numberOfPopulations =
-      (worldParameters.areaOverlap / (pi*worldParameters.medianHomeRange * worldParameters.medianHomeRange )).toInt
+    // Population count is a direct parameter (the density knob); management-grid resolution
+    // is derived from it via the desired average populations per tile.
+    val numberOfPopulations = worldParameters.nPopulations
 
     val nTiles = (numberOfPopulations.toDouble / worldParameters.avgPopulationsPerTile.toDouble).toInt
 
     val landscapeGrid = SquareGrid.fromArea(nTiles)
 
-    // Pre-generate shared hotspot centers on a regular sub-lattice (used by all species)
-    val hotspotCenters: Seq[Coordinate] =
-      if worldParameters.aggregationStrength > 0.0 && worldParameters.numHotspots >= 1 then
-        val side = math.round(math.sqrt(worldParameters.numHotspots.toDouble)).toInt
-        val spacing = 1.0 / side
-        for
-          row <- 0 until side
-          col <- 0 until side
-        yield new Coordinate((col + 0.5) * spacing, (row + 0.5) * spacing, 0.0)
-      else
-        Seq.empty
-
    // println("Generating populations.")
-    val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, worldParameters, hotspotCenters)
+    val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, worldParameters)
 
     //println("Generating interaction network.")
     val populationWeb = PopulationWebGenerator.generatePopulationWeb(populations, metaWeb)
@@ -397,11 +383,22 @@ object World:
   private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, medianHomeRange: Double, rnd: Random):
   DefaultDirectedGraph[Species, DefaultEdge]  =
 
+    // Seed a Commons-Math RNG deterministically from the threaded `rnd` so metaweb
+    // generation is reproducible for a given seed. Previously the distributions were
+    // constructed with no generator, which seeded them from system entropy and made
+    // the whole simulation non-reproducible. One shared generator is created here,
+    // outside rec(): its state advances across retries, keeping the retry loop
+    // productive while remaining fully seed-determined.
+    val commonsRng: org.apache.commons.math3.random.RandomGenerator =
+      new org.apache.commons.math3.random.Well19937c(rnd.nextLong())
+    val bodySizeDist = new LogNormalDistribution(commonsRng, 0, 3)
+    def betaDist(beta: Double) = new BetaDistribution(commonsRng, 1, beta)
+
     @tailrec
     def rec(): DefaultDirectedGraph[(Int, Double), DefaultEdge] =
 
       // Body sizes are drawn from lognormal distribution where close to 90% of species fall within 4 orders of magnitude
-      val bodySizes = Seq.fill(numberOfSpecies)(LogNormalDistribution(0,3).sample()).sorted
+      val bodySizes = Seq.fill(numberOfSpecies)(bodySizeDist.sample()).sorted
 
       // Niche values are scaled between 0 and 1 from body sizes
       val nicheValues = bodySizes.map(m => (m-bodySizes.min)/(bodySizes.max-bodySizes.min))
@@ -414,7 +411,8 @@ object World:
       // }
 
       // Feeding range from beta distribution. The species with the lowest niche value is set to be a basal species: feedingRange = 0
-      val beta = (0.5 / connectance - 1) // how to explain this?? 
+      val beta = (0.5 / connectance - 1) // how to explain this??
+      val feedingRangeDist = betaDist(beta)
       
       // val feedingRange = nicheValues.zip(localDensities).zipWithIndex.map { 
       //   case ((n, density), i) =>
@@ -426,7 +424,7 @@ object World:
 
       val feedingRange =
         nicheValues.zipWithIndex.map(
-          (n, i) => if i > 0 then n * BetaDistribution(1, beta).sample() else 0.0
+          (n, i) => if i > 0 then n * feedingRangeDist.sample() else 0.0
         )
 
       // val feedingRange = nicheValues.zipWithIndex.map { (n, i) =>
@@ -565,49 +563,49 @@ object World:
       }
     }
 
-    val finalConnectance = metaWebDef.edgeSet().size().toDouble / (metaWebDef.vertexSet().size() * (metaWebDef.vertexSet().size() - 1))
-    println(f"Generated metaweb connectance: ${finalConnectance}%.4f (target: ${connectance}%.4f)")
-    
     metaWebDef
 
   private def generatePopulations(
     metaWeb: DefaultDirectedGraph[Species, DefaultEdge],
     numberOfPopulations: Int,
     rnd: Random,
-    worldParameters: WorldParameters,
-    hotspotCenters: Seq[Coordinate] = Seq.empty
+    worldParameters: WorldParameters
   ): Seq[Population] = {
     val abundancesSum: Double = metaWeb.vertexSet().asScala.toSeq.map(s => s.abundance).sum
     val conversionFactor: Double = numberOfPopulations / abundancesSum
 
-    // Generate populations for each species using Thomas process
-    metaWeb.vertexSet().asScala.toSeq
-      .foldLeft((Seq.empty[Population], 0)) { case ((allPopulations, currentId), species) =>
+    // Total count is apportioned across species by relative (allometric) abundance.
+    // Accumulate into a mutable ArrayBuffer (O(1) amortized append per species)
+    // instead of `allPopulations ++ ...` per species (O(n) per concatenation).
+    val allPopulations = scala.collection.mutable.ArrayBuffer.empty[Population]
+    var currentId = 0
+    metaWeb.vertexSet().asScala.toSeq.foreach { species =>
 
-        // Calculate number of populations for this species
-        val speciesAbundance = math.max(1, (species.abundance * conversionFactor).toInt)
+      // Calculate number of populations for this species
+      val speciesAbundance = math.max(1, (species.abundance * conversionFactor).toInt)
 
-        // Create template populations with placeholder coordinates
-        val templatePopulations = (0 until speciesAbundance).map { i =>
-          Population(
-            id = currentId + i,
-            species = species,
-            coordinates = new org.locationtech.jts.geom.Coordinate(0.0, 0.0, 0.0), // placeholder
-            extinct = false
-          )
-        }
-
-        // Use Thomas process to generate spatial coordinates for all populations of this species
-        val spatiallyArrangedPopulations = Population.createPopulations(
-          species              = species,
-          populationSeq        = templatePopulations,
-          rnd                  = rnd,
-          worldParameters      = worldParameters,
-          sharedHotspotCenters = hotspotCenters
+      // Create template populations with placeholder coordinates
+      val templatePopulations = (0 until speciesAbundance).map { i =>
+        Population(
+          id = currentId + i,
+          species = species,
+          coordinates = new org.locationtech.jts.geom.Coordinate(0.0, 0.0, 0.0), // placeholder
+          extinct = false
         )
+      }
 
-        (allPopulations ++ spatiallyArrangedPopulations, currentId + speciesAbundance)
-      }._1 // Return only the populations
+      // Generate spatial coordinates for all populations of this species
+      val spatiallyArrangedPopulations = Population.createPopulations(
+        species         = species,
+        populationSeq   = templatePopulations,
+        rnd             = rnd,
+        worldParameters = worldParameters
+      )
+
+      allPopulations ++= spatiallyArrangedPopulations
+      currentId += speciesAbundance
+    }
+    allPopulations.toSeq
   }
     
 end World
