@@ -105,23 +105,29 @@ private def logNetworkDiagnostics(initialWorld: World, finalWorld: World, nCasca
 object OneSimulation extends App:
 
     // Initialize the World parameters
-    private val worldParameters: WorldParameters =  
+    private val worldParameters: WorldParameters =
         WorldParameters(
-            numberOfSpecies = 200,
-            connectanceMetaWeb = 0.4,
-            areaOverlap = 50.0,
-            medianHomeRange = 0.05,
-            avgPopulationsPerTile = 50,
+            numberOfSpecies                  = 200,
+            connectanceMetaWeb               = 0.4,
+            areaOverlap                      = 20.0,
+            medianHomeRange                  = 0.05,
+            avgPopulationsPerTile            = 5,
+            useThinning                      = false,
+            spreadingFactor                  = 0.5,
+            extinctionProbabilityUnprotected = 0.5,  // default: existing behaviour
+            dietBreadthThreshold             = 0.0,  // legacy: classic outDegree==0 rule (used when preyPerPredator == 0)
+            preyPerPredator                  = 0.0,  // 0.0 = use legacy secondaryExtinctions
         )   
 
     private val conservationParameters: ConservationParameters =
         ConservationParameters(
             fractionProtected = 0.3,
-            conservationIntensity = 1.0,
-            strategyConnectivity = 0.0,
-            strategySpeciesRichness = 0.9,
-            strategyInteractionRichness = 0.09,
-            strategyAbundance = 0.0
+            strategy = Some(ConservationStrategy.InteractionRichness)  // Simplified strategy
+            // Or use custom weights by setting: strategy = None, and specifying manual weights:
+            // strategyConnectivity = 0.0,
+            // strategySpeciesRichness = 0.09,
+            // strategyInteractionRichness = 0.9,
+            // strategyAbundance = 0.0
         )        
 
     // Initialize the World
@@ -131,14 +137,15 @@ object OneSimulation extends App:
         rnd = Random(12L)
     )
 
+    val initialIR = initialWorld.getInteractionsRichness()
+    val initialSR = initialWorld.getSpeciesRichness()
     private val (finalWorld, nCascades) = initialWorld.extinctions()
 
-    val initialSR = initialWorld.getSpeciesRichness()
     val finalSR = finalWorld.getSpeciesRichness()
-
-    val initialIR = initialWorld.getInteractionsRichness()
     val finalIR = finalWorld.getInteractionsRichness()
 
+    println(initialSR)
+    println(finalSR)
     println(initialIR)
     println(finalIR)
 

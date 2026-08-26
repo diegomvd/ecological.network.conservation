@@ -45,6 +45,93 @@ case class ManagementLandscape(
       }
 
     @tailrec
+    def complementarityRecursion(
+                                  managementAreas: Seq[ManagementArea],
+                                  areasInteractions: Map[Int, Set[(Int, Int)]],
+                                  protectedInteractions: Set[(Int, Int)],
+                                  remainingTiles: Int
+                                ): Seq[ManagementArea] =
+
+      if (remainingTiles <= 0 || areasInteractions.isEmpty) then
+        managementAreas
+      else
+        // For each remaining tile, count how many new interactions it would add
+        val marginalGains: Map[Int, Int] = areasInteractions.map { case (tileId, interactions) =>
+          (tileId, (interactions -- protectedInteractions).size)
+        }
+
+        val maxGain = marginalGains.values.max
+        // All tiles tied at the maximum gain — break ties randomly
+        val candidates = marginalGains.filter(_._2 == maxGain).keys.toSeq
+        val tileId = candidates(rnd.nextInt(candidates.size))
+
+        val newProtectedInteractions = protectedInteractions ++ areasInteractions(tileId)
+        val newAreasInteractions = areasInteractions.removed(tileId)
+        val newManagementAreas = managementAreas.map {
+          a => if a.id == tileId then a.updateProtectionStatus() else a
+        }
+
+        complementarityRecursion(
+          newManagementAreas,
+          newAreasInteractions,
+          newProtectedInteractions,
+          remainingTiles - 1
+        )
+
+    // Rarity recursion: select tiles by highest precomputed rarity score (stochastic proportional selection)
+    @tailrec
+    def rarityRecursion(
+                         managementAreas: Seq[ManagementArea],
+                         rarityScores: Map[Int, Double],
+                         remainingTiles: Int
+                       ): Seq[ManagementArea] =
+      if remainingTiles <= 0 || rarityScores.isEmpty then managementAreas
+      else
+        val activeScores = rarityScores.filter((id, _) => managementAreas.exists(a => a.id == id && a.status != ProtectionStatus.Protected))
+        if activeScores.isEmpty then managementAreas
+        else
+          val tileId = Utils.chooseStochasticEvent(activeScores, rnd)
+          if tileId == -1 then managementAreas
+          else
+            val newManagementAreas = managementAreas.map(a => if a.id == tileId then a.updateProtectionStatus() else a)
+            rarityRecursion(newManagementAreas, rarityScores.removed(tileId), remainingTiles - 1)
+
+    @tailrec
+    def dissimilarityComplementarityRecursion[T](
+      managementAreas: Seq[ManagementArea],
+      areasElements: Map[Int, Set[T]],
+      protectedElements: Set[T],
+      remainingTiles: Int
+    ): Seq[ManagementArea] =
+      if remainingTiles <= 0 || areasElements.isEmpty then managementAreas
+      else
+        val marginalGains = areasElements.map((id, elems) => id -> (elems -- protectedElements).size)
+        val maxGain = marginalGains.values.max
+        val candidates = marginalGains.filter(_._2 == maxGain).keys.toSeq
+        val tileId = candidates(rnd.nextInt(candidates.size))
+        dissimilarityComplementarityRecursion(
+          managementAreas.map(a => if a.id == tileId then a.updateProtectionStatus() else a),
+          areasElements.removed(tileId),
+          protectedElements ++ areasElements(tileId),
+          remainingTiles - 1
+        )
+
+    def seedAndRunComplementarity[T](
+      areas: Seq[ManagementArea],
+      areasElements: Map[Int, Set[T]],
+      quota: Int
+    ): Seq[ManagementArea] =
+      if quota <= 0 || areasElements.isEmpty then areas
+      else
+        val seedId = areasElements.keys.toSeq.apply(rnd.nextInt(areasElements.size))
+        dissimilarityComplementarityRecursion(
+          areas.map(a => if a.id == seedId then a.updateProtectionStatus() else a),
+          areasElements.removed(seedId),
+          areasElements(seedId),
+          quota - 1
+        )
+
+    @tailrec
     def protectionRecursion(
                              managementAreas: Seq[ManagementArea],
                              areasSpeciesRichness: Map[Int,Int],
@@ -87,14 +174,23 @@ case class ManagementLandscape(
         val abundanceConservationProbability: Map[Int,Double] =
           areasAbundance.map(x => (x._1, scalingMinMax(x._2, minAbundance, maxAbundance)))
 
-        val totalConservationProbability: Map[Int,Double] = biodivConservationProbability.map(
-          bio =>
-            (bio._1,
-              bio._2 * conservationParameters.weightSpeciesRichness
-                + conservationParameters.weightConnectivity * connectivityConservationProbability.getOrElse(bio._1, 0.0)
-                + conservationParameters.weightInteractionRichness * interactionConservationProbability.getOrElse(bio._1, 0.0)
-                + conservationParameters.weightAbundance * abundanceConservationProbability.getOrElse(bio._1, 0.0))
-        )
+        // Calculate total conservation probability
+        // Special case: if all weights are zero (Random strategy), use uniform probability
+        val totalConservationProbability: Map[Int,Double] =
+          if (conservationParameters.isRandomProtection) {
+            // Random protection: uniform probability for all remaining tiles
+            biodivConservationProbability.map(bio => (bio._1, 1.0))
+          } else {
+            // Strategic protection: weighted combination of criteria
+            biodivConservationProbability.map(
+              bio =>
+                (bio._1,
+                  bio._2 * conservationParameters.weightSpeciesRichness
+                    + conservationParameters.weightConnectivity * connectivityConservationProbability.getOrElse(bio._1, 0.0)
+                    + conservationParameters.weightInteractionRichness * interactionConservationProbability.getOrElse(bio._1, 0.0)
+                    + conservationParameters.weightAbundance * abundanceConservationProbability.getOrElse(bio._1, 0.0))
+            )
+          }
 
         // Guard: ensure we have valid probabilities
         if (totalConservationProbability.isEmpty) then
@@ -128,23 +224,137 @@ case class ManagementLandscape(
               remainingTiles - 1
             )
 
-    val nTiles: Int = (this.managementAreas.size * conservationParameters.fractionProtected).toInt
+    val totalTiles: Int = this.managementAreas.size
+    val nTiles: Int = (totalTiles * conservationParameters.fractionProtected).toInt
 
-    val areasSpeciesRichness: Map[Int,Int] = this.managementAreas.map(a => (a.id, a.getSpeciesRichness)).toMap
-    val areasConnectivity: Map[Int,Int] = this.managementAreas.map(a => (a.id, 0)).toMap
-    val areasInteractionRichness: Map[Int,Int] = this.managementAreas.map(a => (a.id, a.getInteractionRichness(this.populationWeb))).toMap
-    val areasAbundance: Map[Int,Int] = this.managementAreas.map(a => (a.id, a.getAbundance)).toMap
+    // Precompute species rarity scores across ALL areas (once, landscape-level)
+    // score(tile) = sum over species s in tile of 1 / (number of tiles containing s)
+    lazy val speciesRarityScores: Map[Int, Double] =
+      val speciesOccupancy: Map[Int, Int] =
+        this.managementAreas.flatMap(a => a.getSpecies).groupBy(identity).map((s, ts) => s -> ts.size)
+      this.managementAreas.map { a =>
+        val score = a.getSpecies.toSeq.map(s => 1.0 / speciesOccupancy.getOrElse(s, 1)).sum
+        a.id -> score
+      }.toMap
 
-    val newManagementAreas: Seq[ManagementArea] = protectionRecursion(
-      this.managementAreas,
-      areasSpeciesRichness,
-      areasConnectivity,
-      areasInteractionRichness,
-      areasAbundance,
-      nTiles
-    )
+    // Precompute interaction rarity scores across ALL areas (once, landscape-level)
+    // score(tile) = sum over interaction pairs (A,B) in tile of 1 / (number of tiles containing both A and B)
+    lazy val interactionRarityScores: Map[Int, Double] =
+      val tileInteractions: Map[Int, Set[(Int, Int)]] =
+        this.managementAreas.map(a => a.id -> a.getInteractions(this.populationWeb)).toMap
+      val pairOccupancy: Map[(Int, Int), Int] =
+        tileInteractions.values.flatten.groupBy(identity).map((p, ps) => p -> ps.size)
+      this.managementAreas.map { a =>
+        val score = tileInteractions.getOrElse(a.id, Set.empty).toSeq.map(p => 1.0 / pairOccupancy.getOrElse(p, 1)).sum
+        a.id -> score
+      }.toMap
+
+    // Helper: run protection for a subset of areas with a given tile quota,
+    // returning the updated areas (only the subset is modified).
+    def protectSubset(areas: Seq[ManagementArea], quota: Int): Seq[ManagementArea] =
+      if quota <= 0 then areas
+      else if conservationParameters.isComplementarityProtection then
+        val areasInteractions: Map[Int, Set[(Int, Int)]] =
+          areas.map(a => (a.id, a.getInteractions(this.populationWeb))).toMap
+        complementarityRecursion(areas, areasInteractions, Set.empty[(Int, Int)], quota)
+      else if conservationParameters.isSpeciesComplementarityProtection then
+        val areasSpecies: Map[Int, Set[Int]] = areas.map(a => a.id -> a.getSpecies).toMap
+        seedAndRunComplementarity(areas, areasSpecies, quota)
+      else if conservationParameters.isEgocentricInteractionComplementarityProtection then
+        val areasEgoInt: Map[Int, Set[(Int, Int)]] =
+          areas.map(a => a.id -> a.getEgocentricInteractions(this.populationWeb)).toMap
+        seedAndRunComplementarity(areas, areasEgoInt, quota)
+      else if conservationParameters.isSpeciesRarityProtection then
+        rarityRecursion(areas, speciesRarityScores, quota)
+      else if conservationParameters.isInteractionRarityProtection then
+        rarityRecursion(areas, interactionRarityScores, quota)
+      else
+        val areasSpeciesRichness: Map[Int,Int] = areas.map(a => (a.id, a.getSpeciesRichness)).toMap
+        val areasConnectivity: Map[Int,Int]    = areas.map(a => (a.id, 0)).toMap
+        val areasInteractionRichness: Map[Int,Int] =
+          if conservationParameters.isEgocentricInteractionRichnessProtection then
+            areas.map(a => (a.id, a.getEgocentricInteractionRichness(this.populationWeb))).toMap
+          else
+            areas.map(a => (a.id, a.getInteractionRichness(this.populationWeb))).toMap
+        val areasAbundance: Map[Int,Int]       = areas.map(a => (a.id, a.getAbundance)).toMap
+        protectionRecursion(areas, areasSpeciesRichness, areasConnectivity, areasInteractionRichness, areasAbundance, quota)
+
+    val nRegions = conservationParameters.nAdminRegions
+
+    val newManagementAreas: Seq[ManagementArea] =
+      if nRegions <= 1 then
+        // Original global behaviour
+        protectSubset(this.managementAreas, nTiles)
+      else
+        // Partition grid into regions and allocate quotas using random rounding
+        // so that the total equals nTiles exactly.
+        val regions: Seq[Seq[Int]] = grid.partitionIntoRegions(nRegions)
+        val exactPerRegion: Seq[Double] = regions.map(r => r.size.toDouble * conservationParameters.fractionProtected)
+
+        // Stochastic rounding: floor each quota then distribute remainder tiles randomly
+        val floored: Seq[Int] = exactPerRegion.map(_.toInt)
+        val remainder: Int = nTiles - floored.sum
+        val fractionalParts: Seq[(Double, Int)] = exactPerRegion.map(x => x - x.toInt).zipWithIndex.sortBy(-_._1)
+        val roundUpIndices: Set[Int] = fractionalParts.take(remainder).map(_._2).toSet
+        val quotas: Seq[Int] = floored.zipWithIndex.map { case (q, i) => if roundUpIndices(i) then q + 1 else q }
+
+        // Build a mutable map for fast lookup and update
+        val areaById: scala.collection.mutable.Map[Int, ManagementArea] =
+          scala.collection.mutable.Map(this.managementAreas.map(a => a.id -> a)*)
+
+        regions.zip(quotas).foreach { case (regionIds, quota) =>
+          val regionAreas = regionIds.flatMap(id => areaById.get(id)).toSeq
+          val updated = protectSubset(regionAreas, quota)
+          updated.foreach(a => areaById(a.id) = a)
+        }
+
+        this.managementAreas.map(a => areaById.getOrElse(a.id, a))
 
     this.copy(managementAreas = newManagementAreas)
+
+  // Returns a noisy planning copy of the landscape:
+  //   - false negatives: each real population is independently dropped with probability `fnRate`
+  //   - false positives: each tile receives Poisson(`fpRate`) ghost populations, each assigned
+  //     a species drawn uniformly from `allSpeciesIds`. Ghost population IDs are negative integers
+  //     so they are never found in the populationWeb — IR scoring is unaffected, only SR is inflated.
+  // Used to generate the planner's view of the landscape for tile scoring.
+  def perturbedCopy(fnRate: Double, fpRate: Double, allSpeciesIds: Seq[Int], rnd: Random): ManagementLandscape =
+    if fnRate <= 0.0 && fpRate <= 0.0 then this
+    else
+      var ghostId = -1
+      val perturbedAreas = this.managementAreas.map { area =>
+        val afterFN =
+          if fnRate > 0.0 then area.populations.filter(_ => rnd.nextDouble() >= fnRate)
+          else area.populations
+        val afterFP =
+          if fpRate > 0.0 && allSpeciesIds.nonEmpty then
+            val nGhosts = {
+              // Poisson sample via Knuth's algorithm
+              val l = math.exp(-fpRate)
+              var k = 0; var p = 1.0
+              while p > l do { k += 1; p *= rnd.nextDouble() }
+              k - 1
+            }
+            val ghosts = (0 until nGhosts).map { _ =>
+              val sp = allSpeciesIds(rnd.nextInt(allSpeciesIds.size))
+              val id = ghostId; ghostId -= 1
+              id -> sp
+            }.toMap
+            afterFN ++ ghosts
+          else afterFN
+        area.copy(populations = afterFP)
+      }
+      this.copy(managementAreas = perturbedAreas)
+
+  // Copies protection statuses (by tile ID) from `source` to this landscape.
+  // Used to apply a protection plan computed on a perturbed landscape to the true one.
+  def applyProtectionStatusFrom(source: ManagementLandscape): ManagementLandscape =
+    val protectedIds = source.managementAreas
+      .collect { case a if a.status == ProtectionStatus.Protected => a.id }.toSet
+    val updated = this.managementAreas.map { a =>
+      if protectedIds.contains(a.id) then a.updateProtectionStatus() else a
+    }
+    this.copy(managementAreas = updated)
 
   def updatePersistentPopulations(extinctPopulations: Seq[(Int,Int)]): ManagementLandscape =
     val updated = this.managementAreas.map {

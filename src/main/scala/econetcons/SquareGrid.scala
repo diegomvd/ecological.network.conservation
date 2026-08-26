@@ -70,6 +70,25 @@ case class SquareGrid(sideLength: Int) {
    * All cell IDs as a simple sequence - no polygons needed
    */
   def cellIndices: Seq[Int] = 0 until totalCells
+
+  /**
+   * Partition the grid into nRegions rectangular blocks (nRegions must be a perfect square).
+   * Returns one Seq[Int] of cell IDs per region.
+   */
+  def partitionIntoRegions(nRegions: Int): Seq[Seq[Int]] = {
+    val regSide = math.round(math.sqrt(nRegions.toDouble)).toInt
+    val blockRows = sideLength / regSide   // rows per block
+    val blockCols = sideLength / regSide   // cols per block
+    for {
+      regRow <- 0 until regSide
+      regCol <- 0 until regSide
+    } yield {
+      for {
+        r <- (regRow * blockRows) until math.min((regRow + 1) * blockRows, sideLength)
+        c <- (regCol * blockCols) until math.min((regCol + 1) * blockCols, sideLength)
+      } yield r * sideLength + c
+    }
+  }
   
   // ========== PRIVATE METHODS ==========
   

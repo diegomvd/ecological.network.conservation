@@ -8,24 +8,36 @@ import scala.util.Random
 object Utils:
 
   /**
-   * Generate Thomas process candidates with periodic boundaries
+   * Generate Thomas process candidates with periodic boundaries.
    * No landscape boundary parameter needed - always [0,1]²!
+   *
+   * @param hotspotCenters  Pre-generated landscape-level hotspot centers (empty = random landscape)
+   * @param aggregationStrength  Probability [0,1] that a cluster center is drawn near a hotspot center
+   * @param hotspotVariance  Gaussian spread around the chosen hotspot center
    */
   def generateThomasProcessCandidates(
     numCandidates: Int,
     numCenters: Int,
     clusterRadius: Double,
-    rnd: Random
+    rnd: Random,
+    hotspotCenters: Seq[Coordinate] = Seq.empty,
+    aggregationStrength: Double = 0.0,
+    hotspotVariance: Double = 0.1
   ): Seq[Coordinate] = {
-    
+
     val candidatesPerCenter = numCandidates / numCenters
-    
-    // Generate cluster centers - trivial with periodic boundaries!
-    val clusterCenters = (0 until numCenters).map(_ => SquareGrid.randomPoint(rnd))
-    
+
+    val clusterCenters = (0 until numCenters).map { _ =>
+      if hotspotCenters.nonEmpty && rnd.nextDouble() < aggregationStrength then
+        val h = hotspotCenters(rnd.nextInt(hotspotCenters.size))
+        sampleGaussian2D(h.x, h.y, hotspotVariance, rnd)
+      else
+        SquareGrid.randomPoint(rnd)
+    }
+
     // Generate candidates around each center
     clusterCenters.flatMap { center =>
-      (0 until candidatesPerCenter).map(_ => 
+      (0 until candidatesPerCenter).map(_ =>
         generateThomasCandidate(center, clusterRadius, rnd)
       )
     }
@@ -57,6 +69,28 @@ object Utils:
    * Random point in [0,1]² - 100% success rate
    */
   def randomPoint(rnd: Random): Coordinate = SquareGrid.randomPoint(rnd)
+
+  /**
+   * Sample a point from 2D Gaussian distribution with periodic boundary wrapping
+   * Uses Box-Muller transform for Gaussian sampling
+   */
+  def sampleGaussian2D(
+    centerX: Double,
+    centerY: Double,
+    variance: Double,
+    rnd: Random
+  ): Coordinate = {
+    // Box-Muller transform for 2D Gaussian
+    val u1 = rnd.nextDouble()
+    val u2 = rnd.nextDouble()
+    val stdDev = math.sqrt(variance)
+
+    val x = centerX + stdDev * math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.Pi * u2)
+    val y = centerY + stdDev * math.sqrt(-2 * math.log(u1)) * math.sin(2 * math.Pi * u2)
+
+    // Wrap to [0,1]² with periodic boundaries
+    SquareGrid.wrapCoordinate(new Coordinate(x, y, 0.0))
+  }
 
   private def exponentialDistribution(lambda: Double, rnd: Random): Double =
     math.log(1 - rnd.nextDouble()) / (-lambda)

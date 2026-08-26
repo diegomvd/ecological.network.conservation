@@ -15,8 +15,21 @@ import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.Polygon
 
 
+case class DetailedExtinctions(
+  finalWorld: World,
+  nCascades: Int,
+  phase0SpeciesLost: Int,
+  phase0InteractionsLost: Int,
+  primarySpeciesLost: Int,
+  secondarySpeciesLost: Int,
+  primaryInteractionsLost: Int,
+  secondaryInteractionsLost: Int,
+  initialSpeciesRichness: Int,
+  initialInteractionsRichness: Int
+)
+
 case class World(
-  populations: Seq[Population], 
+  populations: Seq[Population],
   managementLandscape: ManagementLandscape, 
   metaWeb: DefaultDirectedGraph[Species, DefaultEdge], 
   populationWeb: DefaultDirectedGraph[Population, DefaultEdge], 
@@ -32,18 +45,20 @@ case class World(
     val speciesInteractions = scala.collection.mutable.Set[(Int, Int)]()
 
     this.populationWeb.vertexSet().asScala.foreach { predatorPop =>
-      this.populationWeb.outgoingEdgesOf(predatorPop).asScala.foreach { edge =>
-        val preyPop = this.populationWeb.getEdgeTarget(edge)
-        val predatorSpeciesId = predatorPop.species.id
-        val preySpeciesId = preyPop.species.id
-
-        // Store as ordered pair to represent directed interaction
-        speciesInteractions += ((predatorSpeciesId, preySpeciesId))
+      // Filter out extinct populations
+      if (!predatorPop.extinct) {
+        this.populationWeb.outgoingEdgesOf(predatorPop).asScala.foreach { edge =>
+          val preyPop = this.populationWeb.getEdgeTarget(edge)
+          // Only count interaction if prey is also not extinct
+          if (!preyPop.extinct) {
+            speciesInteractions += ((predatorPop.species.id, preyPop.species.id))
+          }
+        }
       }
     }
 
     speciesInteractions.size
-
+  
   def primaryExtinctions(): World =
    
     val extinguishIds =
@@ -65,37 +80,53 @@ case class World(
     this.copy(populations = newPopulations, populationWeb = populationWeb, managementLandscape = newManagementLandscape)
 
 
-  def secondaryExtinctions(): (World, Int) =
+  def secondaryExtinctions(dietBreadthThreshold: Double = 0.0): (World, Int) =
+
+    // Compute initial prey-species counts per population before any cascade round.
+    // Only needed when threshold > 0; when 0 we use the classic outDegree==0 rule.
+    val initialPreySpecies: Map[Int, Int] =
+      if dietBreadthThreshold == 0.0 then Map.empty
+      else
+        this.populationWeb.vertexSet().asScala.map { p =>
+          val preySpeciesCount = this.populationWeb.outgoingEdgesOf(p).asScala
+            .map(e => this.populationWeb.getEdgeTarget(e).species.id)
+            .toSet.size
+          p.id -> preySpeciesCount
+        }.toMap
 
     @tailrec
     def extinctionCascades(
-      populationWeb: DefaultDirectedGraph[Population, DefaultEdge], 
-      populations: Seq[Population], 
+      populationWeb: DefaultDirectedGraph[Population, DefaultEdge],
+      populations: Seq[Population],
       nCascades: Int
     ): (DefaultDirectedGraph[Population,DefaultEdge], Seq[Population], Int) =
 
-      
       val (extinguishVertices, extinguishIds) = populationWeb.vertexSet().asScala
         .collect {
-          case p if p.species.trophicLevel > 0 && populationWeb.outDegreeOf(p) == 0 => 
-            (p, (p.id, p.species.id))  
+          case p if p.species.trophicLevel > 0 && {
+            if dietBreadthThreshold == 0.0 then
+              populationWeb.outDegreeOf(p) == 0
+            else
+              val currentPreySpecies = populationWeb.outgoingEdgesOf(p).asScala
+                .map(e => populationWeb.getEdgeTarget(e).species.id)
+                .toSet.size
+              val initial = initialPreySpecies.getOrElse(p.id, 0)
+              initial > 0 && currentPreySpecies < initial * (1.0 - dietBreadthThreshold)
+          } => (p, (p.id, p.species.id))
         }.unzip
 
       if extinguishIds.isEmpty then
         (populationWeb, populations, nCascades)
       else {
-        println(s"  Cascade ${nCascades + 1}: Removing ${extinguishVertices.size} predators without prey")
-        
-        val newPopulationWeb: Boolean = populationWeb.removeAllVertices(extinguishVertices.asJavaCollection)
-        
-        // BUG FIX #2: Use consistent tuple order (popId, speciesId)
-        val newPopulations = populations.map { p => 
+        println(s"  Cascade ${nCascades + 1}: Removing ${extinguishVertices.size} predators ...")
+
+        val _ = populationWeb.removeAllVertices(extinguishVertices.asJavaCollection)
+
+        val newPopulations = populations.map { p =>
           if extinguishIds.contains((p.id, p.species.id)) then p.extinguish else p
         }
-        
-        val newNCascades = nCascades + 1
 
-        extinctionCascades(populationWeb, newPopulations, newNCascades)
+        extinctionCascades(populationWeb, newPopulations, nCascades + 1)
       }
 
     val (newPopulationWeb, newPopulations, nCascades) = extinctionCascades(this.populationWeb, this.populations, 0)
@@ -105,10 +136,166 @@ case class World(
 
     (this.copy(populations = newPopulations, populationWeb = newPopulationWeb, managementLandscape = newManagementLandscape), nCascades)
     
+  /**
+   * Trophic cascade model based on load/supply stress (replaces secondaryExtinctions for Phase 2).
+   *
+   * Each node n has a stress score = max(stress_pred, stress_prey) where:
+   *   load(q)        = Σ_{p ∈ predators(q)}  1 / outDegree(p)   [predation pressure on prey q]
+   *   supply(p)      = Σ_{q ∈ prey(p)}       1 / load(q)        [effective prey capacity for predator p]
+   *   stress_prey(n) = max(0,  load(n) * k - 1)                  [overexploitation, >0 when load(n) > 1/k]
+   *   stress_pred(n) = max(0,  1 - supply(n) / k)                [starvation, >0 when supply(n) < k]
+   *   stress(n)      = max(stress_prey(n), stress_pred(n))
+   *
+   * Each round the single most-stressed node is removed. Basal species (trophicLevel == 0)
+   * have no predator-side stress; top predators have no prey-side stress. The loop runs until
+   * no node has stress > 0.
+   *
+   * Phase 0 (outDegree == 0 cleanup) must be run before calling this method.
+   */
+  def trophicCascades(preyPerPredator: Double): (World, Int) =
+
+    @tailrec
+    def cascade(
+      populationWeb: DefaultDirectedGraph[Population, DefaultEdge],
+      populations: Seq[Population],
+      nRounds: Int
+    ): (DefaultDirectedGraph[Population, DefaultEdge], Seq[Population], Int) =
+
+      val vertices = populationWeb.vertexSet().asScala.toSeq
+
+      // Compute load for every node (predation pressure it receives as prey)
+      val load: Map[Int, Double] = vertices.map { q =>
+        val l = populationWeb.incomingEdgesOf(q).asScala.foldLeft(0.0) { (acc, e) =>
+          val p = populationWeb.getEdgeSource(e)
+          val od = populationWeb.outDegreeOf(p)
+          acc + (if od > 0 then 1.0 / od else 0.0)
+        }
+        q.id -> l
+      }.toMap
+
+      // Compute supply for every node (effective prey capacity it receives as predator)
+      val supply: Map[Int, Double] = vertices.map { p =>
+        val s = populationWeb.outgoingEdgesOf(p).asScala.foldLeft(0.0) { (acc, e) =>
+          val q = populationWeb.getEdgeTarget(e)
+          val l = load.getOrElse(q.id, 0.0)
+          acc + (if l > 0.0 then 1.0 / l else Double.MaxValue / vertices.size)
+        }
+        p.id -> s
+      }.toMap
+
+      // Compute stress for every node
+      val stressed = vertices.flatMap { n =>
+        val stressPrey =
+          if load.getOrElse(n.id, 0.0) == 0.0 then 0.0
+          else math.max(0.0, load(n.id) * preyPerPredator - 1.0)
+        val stressPred =
+          if n.species.trophicLevel == 0 then 0.0
+          else math.max(0.0, 1.0 - supply.getOrElse(n.id, 0.0) / preyPerPredator)
+        val stress = math.max(stressPrey, stressPred)
+        if stress > 0.0 then Some((n, stress)) else None
+      }
+
+      if stressed.isEmpty then
+        (populationWeb, populations, nRounds)
+      else
+        val (mostStressed, stressVal) = stressed.maxBy(_._2)
+        println(s"  TrophicCascade round ${nRounds + 1}: removing ${mostStressed.species.id} (stress=${"%.3f".format(stressVal)})")
+        populationWeb.removeVertex(mostStressed)
+        val newPopulations = populations.map { p =>
+          if p.id == mostStressed.id && p.species.id == mostStressed.species.id then p.extinguish else p
+        }
+        cascade(populationWeb, newPopulations, nRounds + 1)
+
+    val (newPopulationWeb, newPopulations, nRounds) = cascade(this.populationWeb, this.populations, 0)
+    val extinctPopulations = newPopulations.collect { case p if p.extinct => (p.id, p.species.id) }
+    val newManagementLandscape = this.managementLandscape.updatePersistentPopulations(extinctPopulations)
+    (this.copy(populations = newPopulations, populationWeb = newPopulationWeb, managementLandscape = newManagementLandscape), nRounds)
+
+  // Dispatch helper: use trophicCascades if preyPerPredator > 0, else legacy secondaryExtinctions
+  private def phase2Cascades(): (World, Int) =
+    if this.worldParameters.preyPerPredator > 0.0 then
+      this.trophicCascades(this.worldParameters.preyPerPredator)
+    else
+      this.secondaryExtinctions(this.worldParameters.dietBreadthThreshold)
+
   def extinctions(): (World,Int) =
-    // First extinguish populations that cannot subsist, then extinguish according to protection plan and then simulate the cascading secondary extinctions.
-    this.secondaryExtinctions()._1.primaryExtinctions().secondaryExtinctions()
+    // Phase 0: stabilize, Phase 1: primary, Phase 2: cascade (same model for both cascade phases).
+    this.phase2Cascades()._1.primaryExtinctions().phase2Cascades()
+
+  def extinctionsDetailed(): DetailedExtinctions =
+    val spInit = this.getSpeciesRichness()
+    val intInit = this.getInteractionsRichness()
+
+    // Phase 0: stabilize initial world (same cascade model as Phase 2)
+    val (stableWorld, _) = this.phase2Cascades()
+
+    val spBefore0 = stableWorld.getSpeciesRichness()
+    val intBefore0 = stableWorld.getInteractionsRichness()
+
+    val phase0SpeciesLost = spInit - spBefore0
+    val phase0InteractionsLost = intInit - intBefore0
+
+    // Phase 1: primary extinctions
+    val afterPrimary = stableWorld.primaryExtinctions()
+    val spAfterPrimary = afterPrimary.getSpeciesRichness()
+    val intAfterPrimary = afterPrimary.getInteractionsRichness()
+
+    val primarySpeciesLost = spBefore0 - spAfterPrimary
+    val primaryInteractionsLost = intBefore0 - intAfterPrimary
+
+    // Phase 2: trophic cascades (new model) or legacy secondary extinctions
+    val (finalWorld, nCascades) = afterPrimary.phase2Cascades()
+    val spFinal = finalWorld.getSpeciesRichness()
+    val intFinal = finalWorld.getInteractionsRichness()
+
+    val secondarySpeciesLost = spAfterPrimary - spFinal
+    val secondaryInteractionsLost = intAfterPrimary - intFinal
+
+    DetailedExtinctions(
+      finalWorld = finalWorld,
+      nCascades = nCascades,
+      phase0SpeciesLost = phase0SpeciesLost,
+      phase0InteractionsLost = phase0InteractionsLost,
+      primarySpeciesLost = primarySpeciesLost,
+      secondarySpeciesLost = secondarySpeciesLost,
+      primaryInteractionsLost = primaryInteractionsLost,
+      secondaryInteractionsLost = secondaryInteractionsLost,
+      initialSpeciesRichness = spInit,
+      initialInteractionsRichness = intInit
+    )
     
+  /**
+   * Returns a structurally independent copy of this World for use in extinction simulations.
+   *
+   * WHY THIS EXISTS — THE SHARED-MUTABLE-STATE PROBLEM:
+   * `World` is a Scala case class, so `.copy()` performs a shallow copy: it copies field
+   * references, not the objects they point to. `populationWeb` is a mutable JGraphT
+   * `DefaultDirectedGraph`, and `rnd` is a mutable `scala.util.Random`. If two strategy
+   * worlds are derived from the same base world via `.copy()`, they share the exact same
+   * live instances of both objects. When the first strategy runs extinctions —
+   * `primaryExtinctions()` and `secondaryExtinctions()` both call
+   * `populationWeb.removeAllVertices(...)` in place — the shared graph is permanently
+   * depleted, corrupting the second strategy's extinction run entirely.
+   *
+   * This method breaks that sharing by:
+   * 1. Deep-copying the `populationWeb` graph: new graph object, same vertices and edges.
+   * 2. Replacing `rnd` with the caller-supplied fresh Random instance.
+   *
+   * The `ManagementLandscape.populationWeb` reference (used only for tile scoring during
+   * protection planning, never mutated during extinction) is intentionally left shared —
+   * it is read-only in that context and copying it would be wasteful.
+   */
+  def deepCopyForExtinction(newRnd: Random): World =
+    val copiedGraph = new DefaultDirectedGraph[Population, DefaultEdge](classOf[DefaultEdge])
+    this.populationWeb.vertexSet().asScala.foreach(copiedGraph.addVertex)
+    this.populationWeb.edgeSet().asScala.foreach { e =>
+      copiedGraph.addEdge(
+        this.populationWeb.getEdgeSource(e),
+        this.populationWeb.getEdgeTarget(e)
+      )
+    }
+    this.copy(populationWeb = copiedGraph, rnd = newRnd)
+
   def getRealizedWeb: DefaultDirectedGraph[Species, DefaultEdge] =
 
     val realizedWeb = DefaultDirectedGraph[Species, DefaultEdge](classOf[DefaultEdge])
@@ -138,21 +325,34 @@ object World:
   ): World =
 
     val metaWeb = generateMetaWeb(
-      worldParameters.numberOfSpecies, 
+      worldParameters.numberOfSpecies,
       worldParameters.connectanceMetaWeb,
-      worldParameters.medianHomeRange, 
+      worldParameters.medianHomeRange,
       rnd
     )
 
-    val numberOfPopulations = 
-      (worldParameters.areaOverlap / (worldParameters.medianHomeRange * worldParameters.medianHomeRange )).toInt 
+    val pi = 3.1416
+    val numberOfPopulations =
+      (worldParameters.areaOverlap / (pi*worldParameters.medianHomeRange * worldParameters.medianHomeRange )).toInt
 
     val nTiles = (numberOfPopulations.toDouble / worldParameters.avgPopulationsPerTile.toDouble).toInt
-     
+
     val landscapeGrid = SquareGrid.fromArea(nTiles)
 
+    // Pre-generate shared hotspot centers on a regular sub-lattice (used by all species)
+    val hotspotCenters: Seq[Coordinate] =
+      if worldParameters.aggregationStrength > 0.0 && worldParameters.numHotspots >= 1 then
+        val side = math.round(math.sqrt(worldParameters.numHotspots.toDouble)).toInt
+        val spacing = 1.0 / side
+        for
+          row <- 0 until side
+          col <- 0 until side
+        yield new Coordinate((col + 0.5) * spacing, (row + 0.5) * spacing, 0.0)
+      else
+        Seq.empty
+
    // println("Generating populations.")
-    val populations = generatePopulations(metaWeb, numberOfPopulations, rnd)
+    val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, worldParameters, hotspotCenters)
 
     //println("Generating interaction network.")
     val populationWeb = PopulationWebGenerator.generatePopulationWeb(populations, metaWeb)
@@ -164,16 +364,29 @@ object World:
 
 
     //println("Creating management landscape.")
-    val managementLandscape = ManagementLandscape(
+    val trueLandscape = ManagementLandscape(
       landscapeGrid,
       populationsInit,
-      populationWeb, // Add this parameter
+      populationWeb,
       rnd
-    ).applyProtectionPlan(conservationParameters, rnd)
+    )
+    val hasNoise = worldParameters.observationNoise > 0.0 || worldParameters.falsePositiveRate > 0.0
+    val planningLandscape =
+      if hasNoise then
+        val allSpeciesIds = metaWeb.vertexSet().asScala.map(_.id).toSeq
+        trueLandscape.perturbedCopy(worldParameters.observationNoise, worldParameters.falsePositiveRate, allSpeciesIds, rnd)
+      else
+        trueLandscape
+    val selectedLandscape = planningLandscape.applyProtectionPlan(conservationParameters, rnd)
+    val managementLandscape =
+      if hasNoise then
+        trueLandscape.applyProtectionStatusFrom(selectedLandscape)
+      else
+        selectedLandscape
     //println("Initializing world.")
     val unstableWorld = new World(populationsInit, managementLandscape, metaWeb, populationWeb, worldParameters, conservationParameters, rnd)
 
-    val (stableWorld,nCascades) = unstableWorld.secondaryExtinctions()
+    val (stableWorld,nCascades) = unstableWorld.phase2Cascades()
 
     //println("cascades: " + nCascades)
     //println("n pops 2:" + stableWorld.populations.count(!_.extinct))
@@ -358,20 +571,22 @@ object World:
     metaWebDef
 
   private def generatePopulations(
-    metaWeb: DefaultDirectedGraph[Species, DefaultEdge], 
-    numberOfPopulations: Int, 
-    rnd: Random, 
+    metaWeb: DefaultDirectedGraph[Species, DefaultEdge],
+    numberOfPopulations: Int,
+    rnd: Random,
+    worldParameters: WorldParameters,
+    hotspotCenters: Seq[Coordinate] = Seq.empty
   ): Seq[Population] = {
     val abundancesSum: Double = metaWeb.vertexSet().asScala.toSeq.map(s => s.abundance).sum
     val conversionFactor: Double = numberOfPopulations / abundancesSum
 
     // Generate populations for each species using Thomas process
     metaWeb.vertexSet().asScala.toSeq
-      .foldLeft((Seq.empty[Population], 0)) { case ((allPopulations, currentId), species) => 
-        
+      .foldLeft((Seq.empty[Population], 0)) { case ((allPopulations, currentId), species) =>
+
         // Calculate number of populations for this species
         val speciesAbundance = math.max(1, (species.abundance * conversionFactor).toInt)
-        
+
         // Create template populations with placeholder coordinates
         val templatePopulations = (0 until speciesAbundance).map { i =>
           Population(
@@ -381,14 +596,16 @@ object World:
             extinct = false
           )
         }
-        
+
         // Use Thomas process to generate spatial coordinates for all populations of this species
         val spatiallyArrangedPopulations = Population.createPopulations(
-          species = species,
-          populationSeq = templatePopulations,
-          rnd = rnd,
+          species              = species,
+          populationSeq        = templatePopulations,
+          rnd                  = rnd,
+          worldParameters      = worldParameters,
+          sharedHotspotCenters = hotspotCenters
         )
-        
+
         (allPopulations ++ spatiallyArrangedPopulations, currentId + speciesAbundance)
       }._1 // Return only the populations
   }
