@@ -34,8 +34,14 @@ case class World(
   metaWeb: DefaultDirectedGraph[Species, DefaultEdge], 
   populationWeb: DefaultDirectedGraph[Population, DefaultEdge], 
   worldParameters: WorldParameters, 
-  conservationParameters: ConservationParameters, 
-  rnd: Random
+  conservationParameters: ConservationParameters,
+  rnd: Random,
+  // energyTolerance cascade: each consumer population's energy intake at assembly (id -> S0).
+  // Filled once by World.apply and carried through copies, so later cascades measure loss
+  // relative to the ASSEMBLED community, not to whatever web the cascade is called on.
+  energyBaseline: Map[Int, Double] = Map.empty,
+  // diet-breadth rule (dietBreadthThreshold > 0): prey-species count per population at assembly.
+  dietBaseline: Map[Int, Int] = Map.empty,
 ):
 
   def getSpeciesRichness(): Int =
@@ -82,10 +88,13 @@ case class World(
 
   def secondaryExtinctions(dietBreadthThreshold: Double = 0.0): (World, Int) =
 
-    // Compute initial prey-species counts per population before any cascade round.
-    // Only needed when threshold > 0; when 0 we use the classic outDegree==0 rule.
+    // Initial prey-species counts per population. Only needed when threshold > 0; when 0 we use
+    // the classic outDegree==0 rule. Taken from the assembly-time baseline when present (set by
+    // World.apply), so a later call after primary extinctions measures diet loss relative to
+    // the assembled community instead of re-baselining on the already-depleted web.
     val initialPreySpecies: Map[Int, Int] =
       if dietBreadthThreshold == 0.0 then Map.empty
+      else if this.dietBaseline.nonEmpty then this.dietBaseline
       else
         this.populationWeb.vertexSet().asScala.map { p =>
           val preySpeciesCount = this.populationWeb.outgoingEdgesOf(p).asScala
@@ -135,22 +144,23 @@ case class World(
     (this.copy(populations = newPopulations, populationWeb = newPopulationWeb, managementLandscape = newManagementLandscape), nCascades)
     
   /**
-   * Trophic cascade model based on load/supply stress (replaces secondaryExtinctions for Phase 2).
+   * Metabolic energetic cascade (Phase 2). Each population is an individual of its species'
+   * body mass M = species.bodySize. For a predator individual i and prey individual j:
    *
-   * Each node n has a stress score = max(stress_pred, stress_prey) where:
-   *   load(q)        = Σ_{p ∈ predators(q)}  1 / outDegree(p)   [predation pressure on prey q]
-   *   supply(p)      = Σ_{q ∈ prey(p)}       1 / load(q)        [effective prey capacity for predator p]
-   *   stress_prey(n) = max(0,  load(n) * k - 1)                  [overexploitation, >0 when load(n) > 1/k]
-   *   stress_pred(n) = max(0,  1 - supply(n) / k)                [starvation, >0 when supply(n) < k]
-   *   stress(n)      = max(stress_prey(n), stress_pred(n))
+   *   demand   D_i = M_i^0.75                 (Kleiber metabolic scaling; constant absorbed to 1)
+   *   supply   S_j = ε · M_j                  (biomass energy, linear in mass)
+   *   share    each prey j splits S_j EQUALLY among its current predators P_j
+   *   survive  predator i lives iff  Σ_{j ∈ prey(i)} S_j / |P_j|  ≥  D_i
    *
-   * Each round the single most-stressed node is removed. Basal species (trophicLevel == 0)
-   * have no predator-side stress; top predators have no prey-side stress. The loop runs until
-   * no node has stress > 0.
+   * Only predators starve — prey are never removed for being popular (over-predation is
+   * implicit: many predators shrink each share). Removal is greedy: each round the single
+   * predator with the largest deficit (D_i − allocatedSupply_i) is removed and the shares
+   * recomputed, so removing one predator raises its co-predators' shares (rescue) before the
+   * next removal. Basal species (trophicLevel 0) have no demand and cannot starve.
    *
    * Phase 0 (outDegree == 0 cleanup) must be run before calling this method.
    */
-  def trophicCascades(preyPerPredator: Double): (World, Int) =
+  def trophicCascades(epsilon: Double): (World, Int) =
 
     @tailrec
     def cascade(
@@ -161,43 +171,29 @@ case class World(
 
       val vertices = populationWeb.vertexSet().asScala.toSeq
 
-      // Compute load for every node (predation pressure it receives as prey)
-      val load: Map[Int, Double] = vertices.map { q =>
-        val l = populationWeb.incomingEdgesOf(q).asScala.foldLeft(0.0) { (acc, e) =>
-          val p = populationWeb.getEdgeSource(e)
-          val od = populationWeb.outDegreeOf(p)
-          acc + (if od > 0 then 1.0 / od else 0.0)
-        }
-        q.id -> l
-      }.toMap
+      // |P_j| = number of predators currently linked to prey individual j (incoming edges).
+      val predatorCount: Map[Int, Int] =
+        vertices.map(q => q.id -> populationWeb.incomingEdgesOf(q).size()).toMap
 
-      // Compute supply for every node (effective prey capacity it receives as predator)
-      val supply: Map[Int, Double] = vertices.map { p =>
-        val s = populationWeb.outgoingEdgesOf(p).asScala.foldLeft(0.0) { (acc, e) =>
-          val q = populationWeb.getEdgeTarget(e)
-          val l = load.getOrElse(q.id, 0.0)
-          acc + (if l > 0.0 then 1.0 / l else Double.MaxValue / vertices.size)
-        }
-        p.id -> s
-      }.toMap
-
-      // Compute stress for every node
-      val stressed = vertices.flatMap { n =>
-        val stressPrey =
-          if load.getOrElse(n.id, 0.0) == 0.0 then 0.0
-          else math.max(0.0, load(n.id) * preyPerPredator - 1.0)
-        val stressPred =
-          if n.species.trophicLevel == 0 then 0.0
-          else math.max(0.0, 1.0 - supply.getOrElse(n.id, 0.0) / preyPerPredator)
-        val stress = math.max(stressPrey, stressPred)
-        if stress > 0.0 then Some((n, stress)) else None
+      // Allocated supply for each predator: Σ over its prey of (ε · M_prey) / |predators(prey)|.
+      // Only consumers (trophicLevel > 0) can starve; basal species are never removed here.
+      val deficits = vertices.flatMap { p =>
+        if p.species.trophicLevel == 0 then None
+        else
+          val allocated = populationWeb.outgoingEdgesOf(p).asScala.foldLeft(0.0) { (acc, e) =>
+            val q = populationWeb.getEdgeTarget(e)
+            val pc = predatorCount.getOrElse(q.id, 1)
+            acc + (if pc > 0 then epsilon * q.species.bodySize / pc else 0.0)
+          }
+          val demand = math.pow(p.species.bodySize, 0.75)
+          val deficit = demand - allocated
+          if deficit > 0.0 then Some((p, deficit)) else None
       }
 
-      if stressed.isEmpty then
+      if deficits.isEmpty then
         (populationWeb, populations, nRounds)
       else
-        val (mostStressed, stressVal) = stressed.maxBy(_._2)
-        println(s"  TrophicCascade round ${nRounds + 1}: removing ${mostStressed.species.id} (stress=${"%.3f".format(stressVal)})")
+        val (mostStressed, deficitVal) = deficits.maxBy(_._2)
         populationWeb.removeVertex(mostStressed)
         val newPopulations = populations.map { p =>
           if p.id == mostStressed.id && p.species.id == mostStressed.species.id then p.extinguish else p
@@ -209,12 +205,74 @@ case class World(
     val newManagementLandscape = this.managementLandscape.updatePersistentPopulations(extinctPopulations)
     (this.copy(populations = newPopulations, populationWeb = newPopulationWeb, managementLandscape = newManagementLandscape), nRounds)
 
-  // Dispatch helper: use trophicCascades if preyPerPredator > 0, else legacy secondaryExtinctions
-  private def phase2Cascades(): (World, Int) =
-    if this.worldParameters.preyPerPredator > 0.0 then
-      this.trophicCascades(this.worldParameters.preyPerPredator)
+  // Dispatch helper: the metabolic energetic cascade (epsilon > 0) is the go-forward Phase-2
+  // model. Falls back to the legacy diet-breadth / outDegree==0 cleanup when epsilon == 0.
+  private[econetcons] def phase2Cascades(): (World, Int) =
+    this.worldParameters.cascadeModel match
+      case "metabolic" =>
+        if this.worldParameters.epsilon > 0.0 then
+          this.trophicCascades(this.worldParameters.epsilon)
+        else
+          this.secondaryExtinctions(this.worldParameters.dietBreadthThreshold)
+      case "legacy" =>
+        this.secondaryExtinctions(this.worldParameters.dietBreadthThreshold)
+      case "energyTolerance" =>
+        this.energyToleranceCascades(this.worldParameters.energyTolerance)
+      case other =>
+        throw new IllegalArgumentException(s"unknown cascadeModel '$other'")
+
+  /**
+   * Energy-tolerance cascade. A population of a species with body mass m carries biomass
+   * B = m^0.25 (Damuth density m^-0.75 × individual mass m). Each prey population splits its
+   * biomass equally among its current predator populations; a consumer's intake is
+   *
+   *   S_i = Σ_{j ∈ prey(i)} B_j / |P_j|
+   *
+   * Demand is calibrated to the intake in the ASSEMBLED community (S_i⁰, `energyBaseline`), so
+   * the assembled web is energetically feasible by construction. A consumer dies once
+   * S_i ≤ (1 − θ)·S_i⁰, i.e. after losing more than a fraction θ of its initial intake. θ = 1 is
+   * the classic rule (die only when no prey is left). Removal is greedy, one most-stressed
+   * population per round with shares recomputed (co-predators get the freed prey: rescue), as in
+   * `trophicCascades`. Basal species (trophicLevel 0) never starve.
+   *
+   * When `energyBaseline` is empty (assembly), this removes consumers with no prey (classic
+   * cleanup) and then records S⁰ for every surviving consumer.
+   */
+  def energyToleranceCascades(theta: Double): (World, Int) =
+    require(theta > 0.0 && theta <= 1.0, s"energyTolerance must be in (0, 1], got $theta")
+    if this.energyBaseline.isEmpty then
+      val (cleaned, n) = this.secondaryExtinctions(0.0)
+      (cleaned.copy(energyBaseline = World.energySupply(cleaned.populationWeb)), n)
     else
-      this.secondaryExtinctions(this.worldParameters.dietBreadthThreshold)
+      val baseline = this.energyBaseline
+
+      @tailrec
+      def cascade(web: DefaultDirectedGraph[Population, DefaultEdge], populations: Seq[Population], nRounds: Int)
+        : (DefaultDirectedGraph[Population, DefaultEdge], Seq[Population], Int) =
+        val supply = World.energySupply(web)
+        val stressed = web.vertexSet().asScala.iterator.flatMap { p =>
+          if p.species.trophicLevel == 0 then None
+          else
+            val s0 = baseline.getOrElse(p.id, 0.0)
+            val s = supply.getOrElse(p.id, 0.0)
+            // s == 0 (no prey left) always kills, whatever θ or baseline
+            if s <= 0.0 || (s0 > 0.0 && s <= (1.0 - theta) * s0) then
+              Some((p, if s0 > 0.0 then 1.0 - s / s0 else 1.0))
+            else None
+        }.toSeq
+        if stressed.isEmpty then (web, populations, nRounds)
+        else
+          val (worst, _) = stressed.maxBy(_._2)
+          web.removeVertex(worst)
+          val newPopulations = populations.map { p =>
+            if p.id == worst.id && p.species.id == worst.species.id then p.extinguish else p
+          }
+          cascade(web, newPopulations, nRounds + 1)
+
+      val (newWeb, newPopulations, nRounds) = cascade(this.populationWeb, this.populations, 0)
+      val extinct = newPopulations.collect { case p if p.extinct => (p.id, p.species.id) }
+      val newLandscape = this.managementLandscape.updatePersistentPopulations(extinct)
+      (this.copy(populations = newPopulations, populationWeb = newWeb, managementLandscape = newLandscape), nRounds)
 
   def extinctions(): (World,Int) =
     // Phase 0: stabilize, Phase 1: primary, Phase 2: cascade (same model for both cascade phases).
@@ -315,7 +373,95 @@ case class World(
     realizedWeb
 
 object World:
-  
+
+  /** Biomass carried by one population of a species of body mass m: Damuth density m^-0.75 × m. */
+  private[econetcons] def populationBiomass(s: Species): Double = math.pow(s.bodySize, 0.25)
+
+  /**
+   * Energy intake of every consumer population (one with ≥1 prey) in `web`: each prey population
+   * splits its biomass equally among its current predators.
+   */
+  private[econetcons] def energySupply(web: DefaultDirectedGraph[Population, DefaultEdge]): Map[Int, Double] =
+    val out = scala.collection.mutable.HashMap.empty[Int, Double]
+    web.vertexSet().asScala.foreach { p =>
+      if web.outDegreeOf(p) > 0 then
+        out(p.id) = web.outgoingEdgesOf(p).asScala.foldLeft(0.0) { (acc, e) =>
+          val q = web.getEdgeTarget(e)
+          acc + populationBiomass(q.species) / web.inDegreeOf(q)
+        }
+    }
+    out.toMap
+
+  /**
+   * Continuous (prey-averaged) trophic position, Levine (1980): basal species = 1, consumers
+   * TP_i = 1 + mean TP of their metaweb prey. Solved by fixed-point iteration, which converges
+   * because generateMetaWeb only accepts metawebs whose cycles have prey outside the cycle.
+   */
+  private[econetcons] def trophicPositions(metaWeb: DefaultDirectedGraph[Species, DefaultEdge]): Map[Int, Double] =
+    val species = metaWeb.vertexSet().asScala.toVector
+    val prey: Map[Int, Vector[Int]] = species.map(s =>
+      s.id -> metaWeb.outgoingEdgesOf(s).asScala.toVector.map(e => metaWeb.getEdgeTarget(e).id)).toMap
+    var tp: Map[Int, Double] = species.map(s => s.id -> 1.0).toMap
+    var delta = Double.MaxValue
+    var it = 0
+    while delta > 1e-10 && it < 10000 do
+      val next = species.map { s =>
+        val ps = prey(s.id)
+        s.id -> (if ps.isEmpty then 1.0 else 1.0 + ps.map(tp).sum / ps.size)
+      }.toMap
+      delta = species.map(s => math.abs(next(s.id) - tp(s.id))).max
+      tp = next
+      it += 1
+    if delta > 1e-6 then throw new IllegalStateException(s"trophic positions did not converge (delta=$delta)")
+    tp
+
+  /**
+   * Relative allocation weight per species (populations are later apportioned ∝ weight).
+   * See WorldParameters.abundanceModel.
+   */
+  private def allocationWeights(metaWeb: DefaultDirectedGraph[Species, DefaultEdge], wp: WorldParameters): Map[Int, Double] =
+    val species = metaWeb.vertexSet().asScala.toVector
+    wp.abundanceModel match
+      case "damuth" => species.map(s => s.id -> s.abundance).toMap
+      case "transferEfficiency" =>
+        val tp = trophicPositions(metaWeb)
+        species.map(s => s.id -> s.abundance * math.pow(wp.transferEfficiency, tp(s.id) - 1.0)).toMap
+      case "energyBalance" =>
+        // N_i = Damuth density for basal species; for consumers N_i · M_i^0.75 = Σ_j ε·N_j·m_j / P_j
+        // (P_j = number of predator species of j). Solved by fixed-point iteration N = b + K N.
+        // Only links going UP the trophic ladder (prey trophic position < predator's) carry energy:
+        // with ε > 1 a feeding loop would otherwise amplify energy without bound (no solution).
+        require(wp.epsilon > 0.0, "abundanceModel=energyBalance needs epsilon > 0")
+        val tp = trophicPositions(metaWeb)
+        val metaPrey = species.map(s => s.id -> metaWeb.outgoingEdgesOf(s).asScala.toVector.map(metaWeb.getEdgeTarget)).toMap
+        val prey = species.map(s => s.id -> metaPrey(s.id).filter(j => tp(j.id) < tp(s.id))).toMap
+        val nPred = species.map(s => s.id -> metaWeb.inDegreeOf(s)).toMap
+        val basal = species.filter(s => metaPrey(s.id).isEmpty).map(s => s.id -> s.abundance).toMap
+        var n: Map[Int, Double] = species.map(s => s.id -> basal.getOrElse(s.id, 0.0)).toMap
+        var delta = Double.MaxValue
+        var it = 0
+        while delta > 1e-10 && it < 10000 do
+          val next = species.map { s =>
+            s.id -> basal.getOrElse(s.id,
+              prey(s.id).map(j => wp.epsilon * n(j.id) * j.bodySize / nPred(j.id)).sum / math.pow(s.bodySize, 0.75))
+          }.toMap
+          val scale = math.max(1e-300, next.values.max)
+          delta = species.map(s => math.abs(next(s.id) - n(s.id))).max / scale
+          if scale > 1e12 then
+            throw new IllegalStateException("energyBalance allocation diverges (metaweb cycles amplify energy); lower epsilon")
+          n = next
+          it += 1
+        n
+      case other => throw new IllegalArgumentException(s"unknown abundanceModel '$other'")
+
+  // Test-only hook: build metaweb + spatially-arranged populations (pre-web, pre-cascade).
+  private[econetcons] def buildPopsAndMetaForTest(
+    wp: WorldParameters, rnd: Random
+  ): (Seq[Population], DefaultDirectedGraph[Species, DefaultEdge]) =
+    val metaWeb = generateMetaWeb(wp.numberOfSpecies, wp.connectanceMetaWeb, wp.medianHomeRange, wp.bodySizeSigma, rnd)
+    val pops = generatePopulations(metaWeb, wp.nPopulations, rnd, wp)
+    (pops, metaWeb)
+
   def apply(
     worldParameters: WorldParameters,
     conservationParameters: ConservationParameters,
@@ -326,6 +472,7 @@ object World:
       worldParameters.numberOfSpecies,
       worldParameters.connectanceMetaWeb,
       worldParameters.medianHomeRange,
+      worldParameters.bodySizeSigma,
       rnd
     )
 
@@ -346,7 +493,6 @@ object World:
     // TODO: check if this is true  
     // Update populations given that the non interacting ones are removed from the network
     val populationsInit = populationWeb.vertexSet().asScala.toSeq
-    println("npops: " + populationsInit.size)
 
 
     //println("Creating management landscape.")
@@ -377,10 +523,20 @@ object World:
     //println("cascades: " + nCascades)
     //println("n pops 2:" + stableWorld.populations.count(!_.extinct))
 
-    stableWorld
+    // Diet-breadth rule: freeze the assembled community's prey-species counts so later cascades
+    // measure diet loss against it (energyTolerance stores its own baseline inside the cascade).
+    val usesDietRule = worldParameters.dietBreadthThreshold > 0.0 &&
+      (worldParameters.cascadeModel == "legacy" ||
+        (worldParameters.cascadeModel == "metabolic" && worldParameters.epsilon <= 0.0))
+    if usesDietRule then
+      val web = stableWorld.populationWeb
+      stableWorld.copy(dietBaseline = web.vertexSet().asScala.map { p =>
+        p.id -> web.outgoingEdgesOf(p).asScala.map(e => web.getEdgeTarget(e).species.id).toSet.size
+      }.toMap)
+    else stableWorld
 
 
-  private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, medianHomeRange: Double, rnd: Random):
+  private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, medianHomeRange: Double, bodySizeSigma: Double, rnd: Random):
   DefaultDirectedGraph[Species, DefaultEdge]  =
 
     // Seed a Commons-Math RNG deterministically from the threaded `rnd` so metaweb
@@ -391,7 +547,7 @@ object World:
     // productive while remaining fully seed-determined.
     val commonsRng: org.apache.commons.math3.random.RandomGenerator =
       new org.apache.commons.math3.random.Well19937c(rnd.nextLong())
-    val bodySizeDist = new LogNormalDistribution(commonsRng, 0, 3)
+    val bodySizeDist = new LogNormalDistribution(commonsRng, 0, bodySizeSigma)
     def betaDist(beta: Double) = new BetaDistribution(commonsRng, 1, beta)
 
     @tailrec
@@ -571,10 +727,12 @@ object World:
     rnd: Random,
     worldParameters: WorldParameters
   ): Seq[Population] = {
-    val abundancesSum: Double = metaWeb.vertexSet().asScala.toSeq.map(s => s.abundance).sum
+    // Relative weight per species (WorldParameters.abundanceModel; "damuth" = s.abundance).
+    val weight: Map[Int, Double] = allocationWeights(metaWeb, worldParameters)
+    val abundancesSum: Double = metaWeb.vertexSet().asScala.toSeq.map(s => weight(s.id)).sum
     val conversionFactor: Double = numberOfPopulations / abundancesSum
 
-    // Total count is apportioned across species by relative (allometric) abundance.
+    // Total count is apportioned across species by their allocation weight.
     // Accumulate into a mutable ArrayBuffer (O(1) amortized append per species)
     // instead of `allPopulations ++ ...` per species (O(n) per concatenation).
     val allPopulations = scala.collection.mutable.ArrayBuffer.empty[Population]
@@ -582,7 +740,7 @@ object World:
     metaWeb.vertexSet().asScala.toSeq.foreach { species =>
 
       // Calculate number of populations for this species
-      val speciesAbundance = math.max(1, (species.abundance * conversionFactor).toInt)
+      val speciesAbundance = math.max(1, (weight(species.id) * conversionFactor).toInt)
 
       // Create template populations with placeholder coordinates
       val templatePopulations = (0 until speciesAbundance).map { i =>

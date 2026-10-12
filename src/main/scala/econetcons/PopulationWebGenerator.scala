@@ -26,34 +26,30 @@ object PopulationWebGenerator:
     //println(s"Found ${interactingSpeciesPairs.size} interacting species pairs out of ${metaWeb.vertexSet().size() * metaWeb.vertexSet().size()} possible")
     //println(s"Species distribution: ${populationsBySpecies.map(p => s"${p._1.id}→${p._2.size}").mkString(", ")}")
     
-    // PHASE 2: Spatial preparation (O(n))  
+    // PHASE 2: Spatial preparation (O(n)) — grid partitioned by cell AND species so the
+    // edge search below only ever touches populations of the target species in nearby cells.
     val typicalDistance = calculateTypicalDistance(populationsBySpecies)
     val spatialIndex = buildSingleGrid(populations, typicalDistance)
-    
-    //println(f"Typical interaction distance: ${typicalDistance}%.4f")
-    
-    // PHASE 3: Species-first processing 
+
+    // PHASE 3: grid-driven edge search. For each interacting (A,B) species pair, for each
+    // popA pull only species-B populations from cells within the interaction radius — no
+    // scan of the full popsB list, no large-home-range brute-force fallback. O(pairs·neighbors).
     val allInteractingPairs = scala.collection.mutable.ListBuffer[(Population, Population)]()
-    var totalChecks = 0
-    var spatiallyFiltered = 0
-    var bruteForceUsed = 0
-    
+
     interactingSpeciesPairs.foreach { case (speciesA, speciesB) =>
       val popsA = populationsBySpecies.getOrElse(speciesA, Seq.empty)
-      val popsB = populationsBySpecies.getOrElse(speciesB, Seq.empty)
-      
-      if (popsA.nonEmpty && popsB.nonEmpty) {
-        val (pairs, checks, spatial, brute) = findInteractingPopulations(popsA, popsB, spatialIndex)
-        allInteractingPairs ++= pairs
-        totalChecks += checks
-        spatiallyFiltered += spatial  
-        bruteForceUsed += brute
+      if (popsA.nonEmpty && populationsBySpecies.get(speciesB).exists(_.nonEmpty)) {
+        val maxDistance = speciesA.homeRange + speciesB.homeRange
+        popsA.foreach { popA =>
+          spatialIndex.foreachNeighborOfSpecies(popA, speciesB, maxDistance) { popB =>
+            // Preserve original dedup (id ordering) and exact interaction test.
+            if (popA.id < popB.id && canInteract(popA, popB))
+              allInteractingPairs += ((popA, popB))
+          }
+        }
       }
     }
-    
-    //println(s"Distance checks: ${totalChecks} (spatially filtered: ${spatiallyFiltered}, brute force: ${bruteForceUsed})")
-    //println(s"Found ${allInteractingPairs.size} interacting population pairs")
-    
+
     // PHASE 4: Build graph (O(pairs))
     buildPopulationGraph(allInteractingPairs.toSeq, metaWeb)
   }
@@ -104,91 +100,23 @@ object PopulationWebGenerator:
   }
   
   /**
-   * Build single adaptive spatial grid optimized for typical interactions
+   * Build a uniform cell-list grid that tiles [0,1)² exactly (cellSize = 1/gridSize).
+   * `typicalDistance` sizes the cells for locality, but correctness does not depend on it:
+   * the neighbour search below expands its cell radius to cover each pair's actual
+   * interaction distance, so no real interaction is ever missed.
    */
   private def buildSingleGrid(populations: Seq[Population], typicalDistance: Double): SimpleSpatialIndex = {
-    // Size cells so that typical interactions span ~2×2 = 4 cells (good spatial locality)
-    val cellSize = typicalDistance / 2.0
-    val gridSize = math.max(5, math.min(100, math.ceil(1.0 / cellSize).toInt))
-    
-    //println(f"Building spatial index: ${gridSize}x${gridSize} cells, cell size ${cellSize}%.4f")
-    
+    // ~2 cells per typical interaction distance, clamped to a sane grid size. Exact tiling
+    // (cellSize = 1/gridSize) so getCellId never clamps coordinates into a wrong cell.
+    val targetCells = math.ceil(2.0 / math.max(typicalDistance, 1e-6)).toInt
+    val gridSize = math.max(3, math.min(100, targetCells))
+    val cellSize = 1.0 / gridSize
+
     val spatialIndex = SimpleSpatialIndex(cellSize, gridSize)
-    
     populations.foreach { pop =>
-      val cellId = spatialIndex.getCellId(pop.coordinates)
-      spatialIndex.addPopulation(cellId, pop)
+      spatialIndex.addPopulation(spatialIndex.getCellId(pop.coordinates), pop)
     }
-    
-    val occupiedCells = spatialIndex.getOccupiedCells.size
-    //println(s"Populations distributed across ${occupiedCells}/${gridSize * gridSize} cells")
-    
     spatialIndex
-  }
-  
-  /**
-   * Find interacting population pairs between two species using spatial optimization
-   * Returns: (pairs, totalChecks, spatiallyFiltered, bruteForceCount)
-   */
-  private def findInteractingPopulations(
-    popsA: Seq[Population], 
-    popsB: Seq[Population], 
-    spatialIndex: SimpleSpatialIndex
-  ): (Seq[(Population, Population)], Int, Int, Int) = {
-    
-    val interactingPairs = scala.collection.mutable.ListBuffer[(Population, Population)]()
-    var totalChecks = 0
-    var spatiallyFiltered = 0
-    var bruteForceCount = 0
-    
-    // Calculate max home range in species B for spatial strategy decisions
-    val maxHomeRangeB = if (popsB.nonEmpty) popsB.map(_.species.homeRange).max else 0.0
-    
-    popsA.foreach { popA =>
-      
-      // Calculate maximum possible interaction distance with species B
-      val maxDistance = (popA.species.homeRange + maxHomeRangeB)
-      
-      val candidatesB = if (maxDistance > 0.3) {
-        // Brute force: interaction range too large for spatial optimization
-        bruteForceCount += 1
-        popsB
-      } else {
-        // Spatial filtering: get candidates from nearby cells
-        spatiallyFiltered += 1
-        getSpatialCandidates(popA, popsB, spatialIndex, maxDistance)
-      }
-      
-      // Check exact distances for all candidates
-      candidatesB.foreach { popB =>
-        if (popA.id < popB.id) { // Avoid double-counting pairs
-          totalChecks += 1
-          if (canInteract(popA, popB)) {
-            interactingPairs += ((popA, popB))
-          }
-        }
-      }
-    }
-    
-    (interactingPairs.toSeq, totalChecks, spatiallyFiltered, bruteForceCount)
-  }
-  
-  /**
-   * Get spatial candidates using Moore neighborhood (8 surrounding cells)
-   */
-  private def getSpatialCandidates(
-    popA: Population, 
-    popsB: Seq[Population], 
-    spatialIndex: SimpleSpatialIndex, 
-    maxDistance: Double
-  ): Seq[Population] = {
-    
-    val cellId = spatialIndex.getCellId(popA.coordinates)
-    val relevantCells = spatialIndex.getCellsWithinDistance(cellId, maxDistance)
-    val spatialCandidates = relevantCells.flatMap(spatialIndex.getPopulations).toSet
-    
-    // Filter popsB to only those that are spatially nearby
-    popsB.filter(spatialCandidates.contains)
   }
   
   /**
@@ -247,9 +175,13 @@ end PopulationWebGenerator
  * Single-tier grid with Moore neighborhood support
  */
 case class SimpleSpatialIndex(cellSize: Double, gridSize: Int):
-  
-  private val cells = scala.collection.mutable.Map[Int, scala.collection.mutable.ListBuffer[Population]]()
-  
+
+  // cellId -> (speciesId -> populations in that cell). Partitioning by species lets the
+  // edge search pull only the target species' populations from nearby cells, so the inner
+  // loop scales with local neighbours rather than the full population list of that species.
+  private val cells =
+    scala.collection.mutable.Map[Int, scala.collection.mutable.Map[Int, scala.collection.mutable.ListBuffer[Population]]]()
+
   /**
    * Get cell ID for given coordinates with periodic boundary handling
    */
@@ -257,64 +189,52 @@ case class SimpleSpatialIndex(cellSize: Double, gridSize: Int):
     // Handle periodic boundaries - wrap coordinates to [0,1)
     val wrappedX = coord.x - math.floor(coord.x)
     val wrappedY = coord.y - math.floor(coord.y)
-    
+
     val col = math.min((wrappedX / cellSize).toInt, gridSize - 1)
     val row = math.min((wrappedY / cellSize).toInt, gridSize - 1)
     row * gridSize + col
   }
-  
+
   /**
-   * Add population to a cell
+   * Add population to a cell, bucketed by its species id.
    */
   def addPopulation(cellId: Int, population: Population): Unit = {
-    cells.getOrElseUpdate(cellId, scala.collection.mutable.ListBuffer.empty) += population
+    val bySpecies = cells.getOrElseUpdate(cellId, scala.collection.mutable.Map.empty)
+    bySpecies.getOrElseUpdate(population.species.id, scala.collection.mutable.ListBuffer.empty) += population
   }
-  
-  /**
-   * Get all populations in a cell
-   */
-  def getPopulations(cellId: Int): Seq[Population] = {
-    cells.getOrElse(cellId, scala.collection.mutable.ListBuffer.empty).toSeq
-  }
-  
+
   /**
    * Get all occupied cell IDs
    */
   def getOccupiedCells: Seq[Int] = cells.keys.toSeq
-  
+
   /**
-   * Get all cells within a given distance using Moore neighborhood
-   * Handles periodic boundaries correctly
+   * Visit every population of `species` located in a cell within `maxDistance` of `popA`,
+   * applying `f`. Only species-partitioned buckets in the relevant cells are touched.
    */
-  def getCellsWithinDistance(centerCellId: Int, maxDistance: Double): Seq[Int] = {
-    val cellRadius = math.ceil(maxDistance / cellSize).toInt
+  def foreachNeighborOfSpecies(popA: Population, species: Species, maxDistance: Double)(f: Population => Unit): Unit = {
+    val centerCellId = getCellId(popA.coordinates)
+    // Cap the radius at what's needed to cover the whole grid once. Without this cap, a
+    // maxDistance large enough that 2*cellRadius+1 > gridSize would wrap around and visit
+    // the same cell (and thus the same candidate) more than once, producing duplicate pairs.
+    val rawRadius = math.ceil(maxDistance / cellSize).toInt
+    val cellRadius = math.min(rawRadius, gridSize / 2)
     val (centerCol, centerRow) = cellIdToCoord(centerCellId)
-    
-    val result = scala.collection.mutable.ListBuffer[Int]()
-    
-    // Use Moore neighborhood (8-connected)
-    for {
-      dRow <- -cellRadius to cellRadius
-      dCol <- -cellRadius to cellRadius
-    } {
-      // Handle periodic boundaries
-      val wrappedCol = ((centerCol + dCol) % gridSize + gridSize) % gridSize
-      val wrappedRow = ((centerRow + dRow) % gridSize + gridSize) % gridSize
-      val cellId = wrappedRow * gridSize + wrappedCol
-      
-      // Check if this cell center is actually within the distance
-      val cellCenter = getCellCenter(cellId)
-      val centerCellCenter = getCellCenter(centerCellId)
-      val actualDistance = SquareGrid.periodicDistance(centerCellCenter, cellCenter)
-      
-      if (actualDistance <= maxDistance + cellSize * 0.5) { // Add buffer for cell size
-        result += cellId
+    val speciesId = species.id
+
+    // When the capped box already spans the whole grid, iterate each distinct column/row once.
+    val fullSpan = (2 * cellRadius + 1) >= gridSize
+    val colOffsets = if fullSpan then 0 until gridSize else ((centerCol - cellRadius) to (centerCol + cellRadius)).map(c => ((c % gridSize) + gridSize) % gridSize)
+    val rowOffsets = if fullSpan then 0 until gridSize else ((centerRow - cellRadius) to (centerRow + cellRadius)).map(r => ((r % gridSize) + gridSize) % gridSize)
+
+    rowOffsets.foreach { wrappedRow =>
+      colOffsets.foreach { wrappedCol =>
+        val cellId = wrappedRow * gridSize + wrappedCol
+        cells.get(cellId).flatMap(_.get(speciesId)).foreach(_.foreach(f))
       }
     }
-    
-    result.toSeq
   }
-  
+
   /**
    * Convert cell ID back to (col, row) coordinates
    */
@@ -322,16 +242,4 @@ case class SimpleSpatialIndex(cellSize: Double, gridSize: Int):
     val row = cellId / gridSize
     val col = cellId % gridSize
     (col, row)
-  }
-  
-  /**
-   * Get center coordinate of a cell
-   */
-  private def getCellCenter(cellId: Int): Coordinate = {
-    val (col, row) = cellIdToCoord(cellId)
-    new Coordinate(
-      (col + 0.5) * cellSize,
-      (row + 0.5) * cellSize,
-      0.0
-    )
   }
