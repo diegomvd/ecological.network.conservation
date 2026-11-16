@@ -25,7 +25,7 @@ paired/controlled (see `Observables.run`).
 > biomass carves out the viable community (§B′). Under this model `nPopulations`, `epsilon`,
 > `cascadeModel`, `avgPopulationsPerTile` and the biomassPyramid parameters are **not used**.
 > They are kept only so legacy results can be reproduced. The fixed values and the explored axes
-> are in the table below. Evidence for each choice is in `biomass_pyramid_plan.md` ("Emergent
+> are in the table below. Evidence for each choice is in `MODEL_DESIGN_AND_RESULTS.md` ("Emergent
 > assembly").
 
 | Parameter | Paper value / range | Role |

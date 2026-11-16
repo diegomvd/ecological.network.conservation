@@ -1,10 +1,11 @@
-# Plan: biomass-pyramid assembly
+# Model design and results (formerly `biomass_pyramid_plan.md`)
 
 Status (2026-10-14): **superseded by the emergent assembly below**, which is the paper model. The
 biomassPyramid mode (sections "Why" to "Verification") was implemented on 2026-10-12 and stays in
 the code for reference. Calibration showed that its scale parameter n_pop is degenerate with
 totalBiomass, and that every imposed allocation still had to be pruned. That led to letting the
-pyramid emerge instead. All work is on branch `feature/biomass-pyramid`, uncommitted.
+pyramid emerge instead. (The detailed biomassPyramid plan that used to open this file was removed
+when the emergent design was adopted; the mode itself is still in `World.scala`.)
 
 ## Emergent assembly (decided design, 2026-10-13/14)
 
@@ -34,7 +35,7 @@ pyramid emerge instead. All work is on branch `feature/biomass-pyramid`, uncommi
 - **Management grid:** `tileSizeInHomeRanges` t sets the tile side in median home-range
   diameters. The number of tiles no longer depends on the population count.
 
-### Evidence (CSVs in the repo root; 3–5 seeds each)
+### Evidence (CSVs in `data/emergent_design/`; 3–5 seeds each)
 - `emergent_biomass_k.csv`, `emergent_biomass_N0.csv`: under the earlier fixed-k seeding, consumer
   biomass ≈ 0.13 × the basal biomass consumers reach, for every k and N₀. The number of seeds only
   changed basal coverage. → Seeding by range instead.

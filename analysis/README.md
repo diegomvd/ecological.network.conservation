@@ -1,6 +1,6 @@
 # Analysis
 
-Layout (started 2026-10-15 with the paper sweep; older analyses still live in the repo root, see below):
+Layout:
 
 ```
 data/<study>/                 raw simulation outputs (CSV, logs) written by the Scala runners
@@ -10,7 +10,7 @@ analysis/figures/<study>/     figures produced by those scripts
 
 ## paper_sweep — SR vs IR on the emergent assembly (paper model)
 
-Model and parameter set: `MODEL_PARAMETERS.md` (paper configuration), `biomass_pyramid_plan.md` (design and results).
+Model and parameter set: `docs/MODEL_PARAMETERS.md` (paper configuration), `docs/MODEL_DESIGN_AND_RESULTS.md` (design and results).
 Outcomes are % of the post-stabilization baseline; contrasts IR − SR are percentage points.
 
 | Step | Command | Output |
@@ -29,8 +29,13 @@ Outcomes are % of the post-stabilization baseline; contrasts IR − SR are perce
 interaction losses against `Observables.runWith` for every case. Default case: C ∈ {0.05, 0.1, 0.2}, tile size
 ∈ {0.25, 2}, budget 0.15, pExt 0.8.
 
-## Older analyses (not yet moved)
+## Design evidence
 
-Earlier sweeps (basin sweeps, web-structure, assembly diagnostics, Saltelli) keep their CSVs, `analyze_*.py` scripts
-and PNGs in the repo root. They were produced by earlier model versions; move them into `data/<study>` /
-`analysis/<study>` when they are needed again.
+`data/emergent_design/` holds the small diagnostic runs behind the parameter choices of the paper model
+(see its `README.md`). There is no analysis script for them.
+
+## Older analyses
+
+Everything produced by earlier model versions (OpenMOLE sweeps, Saltelli, basin sweeps, web-structure and
+assembly diagnostics) is in `legacy/`, grouped by period with its scripts. See `legacy/README.md` before using
+any of it: strategy labels and the model itself differ from the current ones.

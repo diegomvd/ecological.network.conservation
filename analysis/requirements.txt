@@ -1,0 +1,6 @@
+# Python packages used by analysis/paper_sweep/*.py.
+# Versions installed on the machine that produced the stored figures (Python 3.12):
+#   numpy 2.4.2, pandas 3.0.0, matplotlib 3.10.8
+numpy
+pandas
+matplotlib

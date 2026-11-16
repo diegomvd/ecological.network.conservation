@@ -1,5 +1,19 @@
 # Assessment guide — read this first
 
+> **Note added 2026-11-16, after the repository clean-up.** This guide was written *before* the
+> reorganisation and is kept unchanged below as the hand-over record. Paths have moved:
+>
+> | In this guide | Now |
+> |---|---|
+> | `MODEL_PARAMETERS.md`, `ASSESSMENT_GUIDE.md` | `docs/` |
+> | `biomass_pyramid_plan.md` | `docs/MODEL_DESIGN_AND_RESULTS.md` |
+> | `emergent_*.csv`, `assembly_diagnostic_emergent.*` (root) | `data/emergent_design/` |
+> | legacy root outputs, `*.oms`, `plot_*.py`, `analyze_*.py`, `drago/`, `PSE_analysis.ipynb` | `legacy/<period>/` (see `legacy/README.md`) |
+> | legacy Scala runners and probes (§4.3) | `legacy/scala/` (no longer compiled) |
+>
+> The assessment that this guide asked for is `docs/report/project_assessment.pdf`. The code
+> simplification proposed in §8 has **not** been done: model code is untouched.
+
 *Written 2026-11-16 by the Claude session that built the current model and analyses, for a new session that will
 (1) assess the project's state, results and weak points with a view to a scientific article, and (2) decide which
 parts of this repository are current and valuable, so that a cleaned-up version can be made without legacy material.*
