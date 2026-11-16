@@ -45,3 +45,21 @@ build/
 
 ### Python ###
 __pycache__/
+
+### LaTeX build products ###
+docs/report/*.aux
+docs/report/*.log
+docs/report/*.out
+docs/report/*.toc
+docs/report/*.fls
+docs/report/*.fdb_latexmk
+
+### Legacy archive: scripts, workflows, docs and logs are tracked; bulky outputs stay local ###
+legacy/**/*.csv
+legacy/**/*.png
+legacy/**/*.pdf
+legacy/**/*.eps
+legacy/**/*.svg
+
+### Local tool settings ###
+.claude/
