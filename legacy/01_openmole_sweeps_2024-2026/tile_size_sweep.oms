@@ -1,0 +1,292 @@
+// ─── Sweep: tile size vs strategy (SR / IR / Random) ─────────────────────────
+// Goal: test whether larger tiles (more populations per tile, fewer tiles) close
+// the performance gap between InteractionRichness and SpeciesRichness strategies,
+// because intra-tile IR scoring becomes more complete as tile size grows.
+//
+// Fixed parameters:
+//   preyPerPredator                = 0.5
+//   extinctionProbabilityUnprotected = 0.25
+//   observationNoise / falsePositiveRate = 0.0
+//   nAdminRegions = 1 (global tile selection)
+// Swept parameters:
+//   fractionProtected   in 0.0 to 1.0 by 0.05
+//   avgPopulationsPerTile in Seq(2, 5, 10, 20, 40, 80, 160)
+
+// ─── Inputs ───────────────────────────────────────────────────────────────────
+val fractionProtected     = Val[Double]
+val avgPopulationsPerTile = Val[Int]
+val myseed                = Val[Int]
+
+// ─── Shared landscape diagnostics (base world, no strategy suffix) ─────────────
+val nTiles            = Val[Int]
+val landscapeAlphaSR  = Val[Double]   // mean species richness per tile
+val landscapeAlphaIR  = Val[Double]   // mean interaction richness per tile (intra-tile)
+val landscapeAlphaSRstd = Val[Double] // std of per-tile SR
+val landscapeAlphaIRstd = Val[Double] // std of per-tile IR
+val landscapeBetaSR   = Val[Double]   // Harrison beta-2 across all tiles (species)
+val landscapeBetaIR   = Val[Double]   // Harrison beta-2 across all tiles (interactions)
+
+// ─── Shared comparison metrics (SR vs IR tile selection) ──────────────────────
+val tileOverlapJaccard   = Val[Double]  // Jaccard of SR- vs IR-protected tile sets
+val tileRankCorrelation  = Val[Double]  // Spearman rank correlation of SR vs IR scores
+val spIntCorrelation     = Val[Double]  // Pearson correlation of SR vs IR scores
+
+// ─── Per-strategy outputs ─────────────────────────────────────────────────────
+// Extinction fractions
+val speciesExtinctions_random      = Val[Double]
+val speciesExtinctions_species     = Val[Double]
+val speciesExtinctions_interaction = Val[Double]
+val interactionExtinctions_random      = Val[Double]
+val interactionExtinctions_species     = Val[Double]
+val interactionExtinctions_interaction = Val[Double]
+
+// Cascade counts
+val nCascades_random      = Val[Int]
+val nCascades_species     = Val[Int]
+val nCascades_interaction = Val[Int]
+
+// Primary extinctions
+val primarySpeciesExtinctions_random      = Val[Int]
+val primarySpeciesExtinctions_species     = Val[Int]
+val primarySpeciesExtinctions_interaction = Val[Int]
+val primaryInteractionExtinctions_random      = Val[Int]
+val primaryInteractionExtinctions_species     = Val[Int]
+val primaryInteractionExtinctions_interaction = Val[Int]
+
+// Secondary extinctions
+val secondarySpeciesExtinctions_random      = Val[Int]
+val secondarySpeciesExtinctions_species     = Val[Int]
+val secondarySpeciesExtinctions_interaction = Val[Int]
+val secondaryInteractionExtinctions_random      = Val[Int]
+val secondaryInteractionExtinctions_species     = Val[Int]
+val secondaryInteractionExtinctions_interaction = Val[Int]
+
+// Beta diversity of protected set (pre-extinction)
+val speciesBetaDiversity_pre_random      = Val[Double]
+val speciesBetaDiversity_pre_species     = Val[Double]
+val speciesBetaDiversity_pre_interaction = Val[Double]
+val interactionBetaDiversity_pre_random      = Val[Double]
+val interactionBetaDiversity_pre_species     = Val[Double]
+val interactionBetaDiversity_pre_interaction = Val[Double]
+
+// ─── ScalaTask ────────────────────────────────────────────────────────────────
+val tileSizeSweepSim = ScalaTask(
+  """
+  import econetcons._
+
+  val worldParameters = WorldParameters(
+    numberOfSpecies                  = 200,
+    connectanceMetaWeb               = 0.4,
+    areaOverlap                      = 20.0,
+    medianHomeRange                  = 0.05,
+    avgPopulationsPerTile            = avgPopulationsPerTile,
+    useThinning                      = false,
+    spreadingFactor                  = 0.5,
+    useHotspot                       = false,
+    extinctionProbabilityUnprotected = 0.25,
+    preyPerPredator                  = 0.5,
+    observationNoise                 = 0.0,
+    falsePositiveRate                = 0.0
+  )
+
+  // ── Tile count (derived, for output) ────────────────────────────────────────
+  val nTiles = {
+    val numberOfPopulations = (worldParameters.areaOverlap / (worldParameters.medianHomeRange * worldParameters.medianHomeRange)).toInt
+    val side = math.ceil(math.sqrt(numberOfPopulations.toDouble / worldParameters.avgPopulationsPerTile.toDouble)).toInt
+    side * side
+  }
+
+  // ── Base world: no protection applied ───────────────────────────────────────
+  val baseConservationParameters = ConservationParameters(
+    fractionProtected = 0.0,
+    strategy          = Some(ConservationStrategy.SpeciesRichness),
+    nAdminRegions     = 1
+  )
+  val baseWorld = World(
+    worldParameters        = worldParameters,
+    conservationParameters = baseConservationParameters,
+    rnd                    = Random(myseed)
+  )
+
+  // ── Landscape diagnostics (base world, before any protection) ───────────────
+  val baselineMetrics   = DiagnosticMetrics.computeBaseline(baseWorld)
+  val landscapeAlphaSR  = baselineMetrics.spAlphaMean
+  val landscapeAlphaIR  = baselineMetrics.intAlphaMean
+  val landscapeAlphaSRstd = baselineMetrics.spAlphaStd
+  val landscapeAlphaIRstd = baselineMetrics.intAlphaStd
+  val landscapeBetaSR   = baselineMetrics.spBeta
+  val landscapeBetaIR   = baselineMetrics.intBeta
+
+  // ── Apply each strategy to the identical base landscape ─────────────────────
+  val rndParams = ConservationParameters(
+    fractionProtected = fractionProtected,
+    strategy          = Some(ConservationStrategy.Random),
+    nAdminRegions     = 1
+  )
+  val spParams = ConservationParameters(
+    fractionProtected = fractionProtected,
+    strategy          = Some(ConservationStrategy.SpeciesRichness),
+    nAdminRegions     = 1
+  )
+  val intParams = ConservationParameters(
+    fractionProtected = fractionProtected,
+    strategy          = Some(ConservationStrategy.InteractionRichness),
+    nAdminRegions     = 1
+  )
+
+  val worldWithRndStrategy = baseWorld.copy(
+    managementLandscape    = baseWorld.managementLandscape.applyProtectionPlan(rndParams, Random(myseed)),
+    conservationParameters = rndParams
+  ).deepCopyForExtinction(Random(myseed))
+
+  val worldWithSpStrategy = baseWorld.copy(
+    managementLandscape    = baseWorld.managementLandscape.applyProtectionPlan(spParams, Random(myseed)),
+    conservationParameters = spParams
+  ).deepCopyForExtinction(Random(myseed))
+
+  val worldWithIntStrategy = baseWorld.copy(
+    managementLandscape    = baseWorld.managementLandscape.applyProtectionPlan(intParams, Random(myseed)),
+    conservationParameters = intParams
+  ).deepCopyForExtinction(Random(myseed))
+
+  // ── Tile-level SR/IR score comparison (SR vs IR protected sets) ──────────────
+  val comparisonMetrics   = DiagnosticMetrics.computeStrategyComparison(worldWithSpStrategy, worldWithIntStrategy)
+  val tileOverlapJaccard  = comparisonMetrics.tileOverlapJaccard
+  val tileRankCorrelation = comparisonMetrics.tileRankCorrelation
+  val spIntCorrelation    = comparisonMetrics.spIntCorrelation
+
+  // ── Pre-extinction beta diversity of each strategy's protected set ───────────
+  val (spBeta_pre_random,      intBeta_pre_random)      = DiagnosticMetrics.computeProtectedBetaDiversity(worldWithRndStrategy)
+  val (spBeta_pre_species,     intBeta_pre_species)     = DiagnosticMetrics.computeProtectedBetaDiversity(worldWithSpStrategy)
+  val (spBeta_pre_interaction, intBeta_pre_interaction) = DiagnosticMetrics.computeProtectedBetaDiversity(worldWithIntStrategy)
+
+  val speciesBetaDiversity_pre_random           = spBeta_pre_random
+  val speciesBetaDiversity_pre_species          = spBeta_pre_species
+  val speciesBetaDiversity_pre_interaction      = spBeta_pre_interaction
+  val interactionBetaDiversity_pre_random       = intBeta_pre_random
+  val interactionBetaDiversity_pre_species      = intBeta_pre_species
+  val interactionBetaDiversity_pre_interaction  = intBeta_pre_interaction
+
+  // ── Run extinctions ──────────────────────────────────────────────────────────
+  val resultRnd = worldWithRndStrategy.extinctionsDetailed()
+  val resultSp  = worldWithSpStrategy.extinctionsDetailed()
+  val resultInt = worldWithIntStrategy.extinctionsDetailed()
+
+  val finalWorldRnd = resultRnd.finalWorld
+  val finalWorldSp  = resultSp.finalWorld
+  val finalWorldInt = resultInt.finalWorld
+
+  // ── Extinction fractions ─────────────────────────────────────────────────────
+  // NOTE: getSpeciesRichness() reads the immutable populations Seq so is safe to call
+  // after extinctionsDetailed(). getInteractionsRichness() reads the mutable JGraphT
+  // graph which is depleted in-place by extinctionsDetailed(), so we use the
+  // initialInteractionsRichness field captured inside extinctionsDetailed() before
+  // any mutation, plus the absolute lost counts, to reconstruct the percentage.
+  val initialSR_rnd = resultRnd.initialSpeciesRichness
+  val initialIR_rnd = resultRnd.initialInteractionsRichness
+  val initialSR_sp  = resultSp.initialSpeciesRichness
+  val initialIR_sp  = resultSp.initialInteractionsRichness
+  val initialSR_int = resultInt.initialSpeciesRichness
+  val initialIR_int = resultInt.initialInteractionsRichness
+
+  val finalSR_rnd = finalWorldRnd.getSpeciesRichness()
+  val finalSR_sp  = finalWorldSp.getSpeciesRichness()
+  val finalSR_int = finalWorldInt.getSpeciesRichness()
+
+  // Interaction richness lost = primary + secondary (phase0 interactions lost not included in total)
+  val irLost_rnd = resultRnd.primaryInteractionsLost + resultRnd.secondaryInteractionsLost
+  val irLost_sp  = resultSp.primaryInteractionsLost  + resultSp.secondaryInteractionsLost
+  val irLost_int = resultInt.primaryInteractionsLost + resultInt.secondaryInteractionsLost
+
+  val speciesExtinctions_random          = if initialSR_rnd > 0 then (initialSR_rnd - finalSR_rnd).toDouble / initialSR_rnd * 100.0 else 0.0
+  val interactionExtinctions_random      = if initialIR_rnd > 0 then irLost_rnd.toDouble / initialIR_rnd * 100.0 else 0.0
+  val speciesExtinctions_species         = if initialSR_sp  > 0 then (initialSR_sp  - finalSR_sp).toDouble  / initialSR_sp  * 100.0 else 0.0
+  val interactionExtinctions_species     = if initialIR_sp  > 0 then irLost_sp.toDouble  / initialIR_sp  * 100.0 else 0.0
+  val speciesExtinctions_interaction     = if initialSR_int > 0 then (initialSR_int - finalSR_int).toDouble / initialSR_int * 100.0 else 0.0
+  val interactionExtinctions_interaction = if initialIR_int > 0 then irLost_int.toDouble / initialIR_int * 100.0 else 0.0
+
+  // ── Cascade counts ───────────────────────────────────────────────────────────
+  val nCascades_random      = resultRnd.nCascades
+  val nCascades_species     = resultSp.nCascades
+  val nCascades_interaction = resultInt.nCascades
+
+  // ── Primary extinctions ──────────────────────────────────────────────────────
+  val primarySpeciesExtinctions_random          = resultRnd.primarySpeciesLost
+  val primarySpeciesExtinctions_species         = resultSp.primarySpeciesLost
+  val primarySpeciesExtinctions_interaction     = resultInt.primarySpeciesLost
+  val primaryInteractionExtinctions_random      = resultRnd.primaryInteractionsLost
+  val primaryInteractionExtinctions_species     = resultSp.primaryInteractionsLost
+  val primaryInteractionExtinctions_interaction = resultInt.primaryInteractionsLost
+
+  // ── Secondary extinctions ────────────────────────────────────────────────────
+  val secondarySpeciesExtinctions_random          = resultRnd.secondarySpeciesLost
+  val secondarySpeciesExtinctions_species         = resultSp.secondarySpeciesLost
+  val secondarySpeciesExtinctions_interaction     = resultInt.secondarySpeciesLost
+  val secondaryInteractionExtinctions_random      = resultRnd.secondaryInteractionsLost
+  val secondaryInteractionExtinctions_species     = resultSp.secondaryInteractionsLost
+  val secondaryInteractionExtinctions_interaction = resultInt.secondaryInteractionsLost
+  """
+) set (
+  inputs  += (fractionProtected, avgPopulationsPerTile, myseed),
+  outputs += (
+    fractionProtected, avgPopulationsPerTile, myseed, nTiles,
+    // Landscape diagnostics (base world)
+    landscapeAlphaSR, landscapeAlphaSRstd, landscapeBetaSR,
+    landscapeAlphaIR, landscapeAlphaIRstd, landscapeBetaIR,
+    // Tile-level SR vs IR comparison
+    tileOverlapJaccard, tileRankCorrelation, spIntCorrelation,
+    // Extinction fractions
+    speciesExtinctions_random, speciesExtinctions_species, speciesExtinctions_interaction,
+    interactionExtinctions_random, interactionExtinctions_species, interactionExtinctions_interaction,
+    // Cascade counts
+    nCascades_random, nCascades_species, nCascades_interaction,
+    // Primary extinctions
+    primarySpeciesExtinctions_random, primarySpeciesExtinctions_species, primarySpeciesExtinctions_interaction,
+    primaryInteractionExtinctions_random, primaryInteractionExtinctions_species, primaryInteractionExtinctions_interaction,
+    // Secondary extinctions
+    secondarySpeciesExtinctions_random, secondarySpeciesExtinctions_species, secondarySpeciesExtinctions_interaction,
+    secondaryInteractionExtinctions_random, secondaryInteractionExtinctions_species, secondaryInteractionExtinctions_interaction,
+    // Beta diversity of protected set (pre-extinction)
+    speciesBetaDiversity_pre_random, speciesBetaDiversity_pre_species, speciesBetaDiversity_pre_interaction,
+    interactionBetaDiversity_pre_random, interactionBetaDiversity_pre_species, interactionBetaDiversity_pre_interaction
+  ),
+  plugins += pluginsOf(
+    econetcons.World,
+    econetcons.ConservationParameters,
+    econetcons.WorldParameters,
+    econetcons.ConservationStrategy,
+    econetcons.DiagnosticMetrics,
+    econetcons.SimulationMetrics,
+    econetcons.DetailedExtinctions
+  )
+)
+
+// ─── Environments ─────────────────────────────────────────────────────────────
+val atlas = SLURMEnvironment(
+  "integratedmodelling",
+  "atlas-fdr.sw.ehu.es",
+  workDirectory   = "/scratch/integratedmodelling/animalitos",
+  sharedDirectory = "/scratch/integratedmodelling/.tmp/",
+  modules         = Seq("Apptainer"),
+  partition       = "general",
+  qos             = "regular",
+  nodes           = 3,
+  time            = 1 hour,
+  submittedJobs   = 72,
+)
+
+val local = LocalEnvironment(4)
+
+// ─── Experiment ───────────────────────────────────────────────────────────────
+val replications = Replication(
+  evaluation = tileSizeSweepSim,
+  seed       = myseed,
+  sample     = 100,
+)
+
+DirectSampling(
+  evaluation = replications,
+  sampling   =
+    (fractionProtected     in (0.0 to 1.0 by 0.05)) x
+    (avgPopulationsPerTile in Seq(2, 5, 10, 20, 40, 80, 160)),
+) hook (workDirectory / "tile_size_sweep") on atlas

@@ -1,0 +1,149 @@
+// ─── Saltelli / Sobol sensitivity analysis of the SR-vs-IR (and EIR-vs-SR) strategy gap ──
+// Design: see saltelli_sensitivity_plan.md (2026-09-05 revision).
+//
+// Method: SensitivitySaltelli over k = 8 continuous inputs. Budget = sample·(k+2) design
+// points; each design point is evaluated as the MEAN over `nSeeds` replicate worlds, so each
+// Saltelli evaluation is a deterministic function of the 8 inputs (what Sobol assumes) and the
+// paired Δ contrasts (SR/IR/EIR on the SAME base world per seed) are well defined.
+//
+// Focus outputs: three IR-vs-SR gaps (species / interaction / robustness) + three EIR-vs-SR
+// gaps. Raw SR/IR/EIR anchors are emitted alongside for convergence-checking and post-hoc use.
+//
+// Integer inputs (nPopulations, avgPopulationsPerTile) are sampled as Double and rounded
+// inside the task before calling Observables.run.
+
+// ─── Inputs (the 8 Saltelli factors) ────────────────────────────────────────────
+val connectanceMetaWeb                = Val[Double]
+val epsilon                           = Val[Double]
+val nPopulationsD                     = Val[Double]   // sampled continuous, rounded to Int in task
+val medianHomeRange                   = Val[Double]
+val extinctionProbabilityUnprotected  = Val[Double]
+val fractionProtected                 = Val[Double]
+val avgPopulationsPerTileD            = Val[Double]   // sampled continuous, rounded to Int in task
+val meanPatchesPerSpecies             = Val[Double]
+
+// ─── Outputs: the six curated contrasts (Δ = strategy − SR) ──────────────────────
+val dSp_IR_SR       = Val[Double]   // IR_sp_ext_total     − SR_sp_ext_total
+val dSpInt_IR_SR    = Val[Double]   // IR_spint_ext_total  − SR_spint_ext_total
+val dRobust_IR_SR   = Val[Double]   // IR_robust_sp_ext_30 − SR_robust_sp_ext_30
+val dSp_EIR_SR      = Val[Double]   // EIR_sp_ext_total     − SR_sp_ext_total
+val dSpInt_EIR_SR   = Val[Double]   // EIR_spint_ext_total  − SR_spint_ext_total
+val dRobust_EIR_SR  = Val[Double]   // EIR_robust_sp_ext_30 − SR_robust_sp_ext_30
+
+// ─── Raw anchors (mean over seeds) for convergence-checking / post-hoc contrasts ──
+val SR_sp_ext_total      = Val[Double]
+val IR_sp_ext_total      = Val[Double]
+val EIR_sp_ext_total     = Val[Double]
+val SR_spint_ext_total   = Val[Double]
+val IR_spint_ext_total   = Val[Double]
+val EIR_spint_ext_total  = Val[Double]
+val SR_robust_sp_ext_30  = Val[Double]
+val IR_robust_sp_ext_30  = Val[Double]
+val EIR_robust_sp_ext_30 = Val[Double]
+val baseline_sp          = Val[Double]   // SR_baseline_sp, mean over seeds (world scale sanity)
+val jaccard_SR_IR        = Val[Double]   // pair_SR_IR_jaccard_protected (selection divergence anchor)
+
+// ─── ScalaTask: mean of Observables.run over nSeeds worlds at one design point ────
+val saltelliTask = ScalaTask(
+  """
+  import econetcons._
+
+  // Fixed factors (see plan): numberOfSpecies=200, bodySizeSigma=1.0, meanPatches varied,
+  // preyPerPredator=0.0 (legacy off), observationNoise/falsePositiveRate=0.0 (defaults in run).
+  val nSeeds = 5
+
+  val nPop  = math.round(nPopulationsD).toInt
+  val tile  = math.round(avgPopulationsPerTileD).toInt
+
+  // Evaluate all strategies on the same base world per seed; average the flat output maps.
+  val maps: Seq[Map[String, Double]] = (1 to nSeeds).map { s =>
+    Observables.run(
+      numberOfSpecies                  = 200,
+      connectanceMetaWeb               = connectanceMetaWeb,
+      nPopulations                     = nPop,
+      medianHomeRange                  = medianHomeRange,
+      avgPopulationsPerTile            = tile,
+      preyPerPredator                  = 0.0,
+      fractionProtected                = fractionProtected,
+      seed                             = s.toLong,
+      epsilon                          = epsilon,
+      extinctionProbabilityUnprotected = extinctionProbabilityUnprotected,
+      bodySizeSigma                    = 1.0,
+      meanPatchesPerSpecies            = meanPatchesPerSpecies
+    )
+  }
+
+  def mean(key: String): Double = maps.map(_.getOrElse(key, 0.0)).sum / maps.size
+
+  // Raw anchors (mean over seeds)
+  val SR_sp_ext_total      = mean("SR_sp_ext_total")
+  val IR_sp_ext_total      = mean("IR_sp_ext_total")
+  val EIR_sp_ext_total     = mean("EIR_sp_ext_total")
+  val SR_spint_ext_total   = mean("SR_spint_ext_total")
+  val IR_spint_ext_total   = mean("IR_spint_ext_total")
+  val EIR_spint_ext_total  = mean("EIR_spint_ext_total")
+  val SR_robust_sp_ext_30  = mean("SR_robust_sp_ext_30")
+  val IR_robust_sp_ext_30  = mean("IR_robust_sp_ext_30")
+  val EIR_robust_sp_ext_30 = mean("EIR_robust_sp_ext_30")
+  val baseline_sp          = mean("SR_baseline_sp")
+  val jaccard_SR_IR        = mean("pair_SR_IR_jaccard_protected")
+
+  // Contrasts computed from the seed-averaged anchors (paired within each seed upstream).
+  val dSp_IR_SR      = IR_sp_ext_total      - SR_sp_ext_total
+  val dSpInt_IR_SR   = IR_spint_ext_total   - SR_spint_ext_total
+  val dRobust_IR_SR  = IR_robust_sp_ext_30  - SR_robust_sp_ext_30
+  val dSp_EIR_SR     = EIR_sp_ext_total     - SR_sp_ext_total
+  val dSpInt_EIR_SR  = EIR_spint_ext_total  - SR_spint_ext_total
+  val dRobust_EIR_SR = EIR_robust_sp_ext_30 - SR_robust_sp_ext_30
+  """
+) set (
+  inputs += (
+    connectanceMetaWeb, epsilon, nPopulationsD, medianHomeRange,
+    extinctionProbabilityUnprotected, fractionProtected, avgPopulationsPerTileD,
+    meanPatchesPerSpecies
+  ),
+  outputs += (
+    dSp_IR_SR, dSpInt_IR_SR, dRobust_IR_SR,
+    dSp_EIR_SR, dSpInt_EIR_SR, dRobust_EIR_SR,
+    SR_sp_ext_total, IR_sp_ext_total, EIR_sp_ext_total,
+    SR_spint_ext_total, IR_spint_ext_total, EIR_spint_ext_total,
+    SR_robust_sp_ext_30, IR_robust_sp_ext_30, EIR_robust_sp_ext_30,
+    baseline_sp, jaccard_SR_IR
+  ),
+  plugins += pluginsOf(
+    econetcons.Observables,
+    econetcons.World,
+    econetcons.WorldParameters,
+    econetcons.ConservationParameters,
+    econetcons.ConservationStrategy
+  )
+)
+
+// ─── Environment: local, 20 workers (22-core machine, leave 2 for OM/JVM + OS) ────
+val env = LocalEnvironment(20)
+
+// ─── Saltelli sensitivity method ─────────────────────────────────────────────────
+// Budget: design points = sample·(k+2) = 1024·10 = 10,240; × 5 seeds ≈ 51,200 model runs.
+// At measured ~11.9 s/run on 20 cores → ~8–9 h wall.
+SensitivitySaltelli(
+  evaluation = saltelliTask,
+  inputs = Seq(
+    connectanceMetaWeb               in (0.05, 0.25),
+    epsilon                          in (0.5, 5.0),
+    nPopulationsD                    in (5000.0, 10000.0),
+    medianHomeRange                  in (0.01, 0.05),
+    extinctionProbabilityUnprotected in (0.05, 1.0),
+    fractionProtected                in (0.05, 0.45),
+    avgPopulationsPerTileD           in (10.0, 100.0),
+    meanPatchesPerSpecies            in (1.0, 10.0)
+  ),
+  outputs = Seq(
+    dSp_IR_SR, dSpInt_IR_SR, dRobust_IR_SR,
+    dSp_EIR_SR, dSpInt_EIR_SR, dRobust_EIR_SR,
+    SR_sp_ext_total, IR_sp_ext_total, EIR_sp_ext_total,
+    SR_spint_ext_total, IR_spint_ext_total, EIR_spint_ext_total,
+    SR_robust_sp_ext_30, IR_robust_sp_ext_30, EIR_robust_sp_ext_30,
+    baseline_sp, jaccard_SR_IR
+  ),
+  sample = 1024
+) hook (workDirectory / "saltelli_sensitivity_results.csv") on env

@@ -1,0 +1,92 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.12.1)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 1 s, completed Oct 8, 2026, 12:07:33 PM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[info] compiling 1 Scala source to /home/diego/git/ecological.network.conservation/target/scala-3.3.3/classes ...
+[info] done compiling
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.BasinSweep --tile-steps 20 --frac-steps 20 --seeds 30 --threads 20 --out basin_sweep_v2.csv
+[BasinSweep] tiles(20, log, dedup)=10,12,14,16,19,22,26,30,35,41,48,57,66,78,91,106,125,146,171,200
+[BasinSweep] fracs(20, lin)=0.050,0.068,0.087,0.105,0.124,0.142,0.161,0.179,0.197,0.216,0.234,0.253,0.271,0.289,0.308,0.326,0.345,0.363,0.382,0.400
+[BasinSweep] hr=0.016,0.02,0.025  seeds=30  threads=20  eps=2.0 pExt=0.5
+[BasinSweep] 36000 / 36000 tasks to run
+[BasinSweep] 500/36000  481s elapsed  962 ms/run(wall)  ETA 569.2 min  (failed 0)
+[BasinSweep] 1000/36000  900s elapsed  900 ms/run(wall)  ETA 524.9 min  (failed 0)
+[BasinSweep] 1500/36000  1302s elapsed  868 ms/run(wall)  ETA 499.0 min  (failed 0)
+[BasinSweep] 2000/36000  1756s elapsed  878 ms/run(wall)  ETA 497.4 min  (failed 0)
+[BasinSweep] 2500/36000  2197s elapsed  879 ms/run(wall)  ETA 490.6 min  (failed 0)
+[BasinSweep] 3000/36000  2527s elapsed  842 ms/run(wall)  ETA 463.3 min  (failed 0)
+[BasinSweep] 3500/36000  2858s elapsed  817 ms/run(wall)  ETA 442.3 min  (failed 0)
+[BasinSweep] 4000/36000  3186s elapsed  797 ms/run(wall)  ETA 424.8 min  (failed 0)
+[BasinSweep] 4500/36000  3519s elapsed  782 ms/run(wall)  ETA 410.5 min  (failed 0)
+[BasinSweep] 5000/36000  3847s elapsed  769 ms/run(wall)  ETA 397.5 min  (failed 0)
+[BasinSweep] 5500/36000  4229s elapsed  769 ms/run(wall)  ETA 390.8 min  (failed 0)
+[BasinSweep] 6000/36000  4562s elapsed  760 ms/run(wall)  ETA 380.2 min  (failed 0)
+[BasinSweep] 6500/36000  4896s elapsed  753 ms/run(wall)  ETA 370.3 min  (failed 0)
+[BasinSweep] 7000/36000  5229s elapsed  747 ms/run(wall)  ETA 361.0 min  (failed 0)
+[BasinSweep] 7500/36000  5555s elapsed  741 ms/run(wall)  ETA 351.8 min  (failed 0)
+[BasinSweep] 8000/36000  7511s elapsed  939 ms/run(wall)  ETA 438.2 min  (failed 0)
+[BasinSweep] 8500/36000  7831s elapsed  921 ms/run(wall)  ETA 422.3 min  (failed 0)
+[BasinSweep] 9000/36000  8195s elapsed  911 ms/run(wall)  ETA 409.7 min  (failed 0)
+[BasinSweep] 9500/36000  8571s elapsed  902 ms/run(wall)  ETA 398.5 min  (failed 0)
+[BasinSweep] 10000/36000  8954s elapsed  895 ms/run(wall)  ETA 388.0 min  (failed 0)
+[BasinSweep] 10500/36000  9339s elapsed  889 ms/run(wall)  ETA 378.0 min  (failed 0)
+[BasinSweep] 11000/36000  9733s elapsed  885 ms/run(wall)  ETA 368.7 min  (failed 0)
+[BasinSweep] 11500/36000  10132s elapsed  881 ms/run(wall)  ETA 359.8 min  (failed 0)
+[BasinSweep] 12000/36000  10524s elapsed  877 ms/run(wall)  ETA 350.8 min  (failed 0)
+[BasinSweep] 12500/36000  10928s elapsed  874 ms/run(wall)  ETA 342.4 min  (failed 0)
+[BasinSweep] 13000/36000  11315s elapsed  870 ms/run(wall)  ETA 333.7 min  (failed 0)
+[BasinSweep] 13500/36000  11717s elapsed  868 ms/run(wall)  ETA 325.5 min  (failed 0)
+[BasinSweep] 14000/36000  12099s elapsed  864 ms/run(wall)  ETA 316.9 min  (failed 0)
+[BasinSweep] 14500/36000  12422s elapsed  857 ms/run(wall)  ETA 307.0 min  (failed 0)
+[BasinSweep] 15000/36000  12736s elapsed  849 ms/run(wall)  ETA 297.2 min  (failed 0)
+[BasinSweep] 15500/36000  13063s elapsed  843 ms/run(wall)  ETA 287.9 min  (failed 0)
+[BasinSweep] 16000/36000  13385s elapsed  837 ms/run(wall)  ETA 278.9 min  (failed 0)
+[BasinSweep] 16500/36000  13699s elapsed  830 ms/run(wall)  ETA 269.8 min  (failed 0)
+[BasinSweep] 17000/36000  14023s elapsed  825 ms/run(wall)  ETA 261.2 min  (failed 0)
+[BasinSweep] 17500/36000  14335s elapsed  819 ms/run(wall)  ETA 252.6 min  (failed 0)
+[BasinSweep] 18000/36000  14659s elapsed  814 ms/run(wall)  ETA 244.3 min  (failed 0)
+[BasinSweep] 18500/36000  14973s elapsed  809 ms/run(wall)  ETA 236.1 min  (failed 0)
+[BasinSweep] 19000/36000  15294s elapsed  805 ms/run(wall)  ETA 228.1 min  (failed 0)
+[BasinSweep] 19500/36000  15611s elapsed  801 ms/run(wall)  ETA 220.2 min  (failed 0)
+[BasinSweep] 20000/36000  15929s elapsed  796 ms/run(wall)  ETA 212.4 min  (failed 0)
+[BasinSweep] 20500/36000  16251s elapsed  793 ms/run(wall)  ETA 204.8 min  (failed 0)
+[BasinSweep] 21000/36000  16565s elapsed  789 ms/run(wall)  ETA 197.2 min  (failed 0)
+[BasinSweep] 21500/36000  16888s elapsed  785 ms/run(wall)  ETA 189.8 min  (failed 0)
+[BasinSweep] 22000/36000  17200s elapsed  782 ms/run(wall)  ETA 182.4 min  (failed 0)
+[BasinSweep] 22500/36000  17524s elapsed  779 ms/run(wall)  ETA 175.2 min  (failed 0)
+[BasinSweep] 23000/36000  17836s elapsed  775 ms/run(wall)  ETA 168.0 min  (failed 0)
+[BasinSweep] 23500/36000  18158s elapsed  773 ms/run(wall)  ETA 161.0 min  (failed 0)
+[BasinSweep] 24000/36000  18476s elapsed  770 ms/run(wall)  ETA 154.0 min  (failed 0)
+[BasinSweep] 24500/36000  18793s elapsed  767 ms/run(wall)  ETA 147.0 min  (failed 0)
+[BasinSweep] 25000/36000  19114s elapsed  765 ms/run(wall)  ETA 140.2 min  (failed 0)
+[BasinSweep] 25500/36000  19429s elapsed  762 ms/run(wall)  ETA 133.3 min  (failed 0)
+[BasinSweep] 26000/36000  19752s elapsed  760 ms/run(wall)  ETA 126.6 min  (failed 0)
+[BasinSweep] 26500/36000  20065s elapsed  757 ms/run(wall)  ETA 119.9 min  (failed 0)
+[BasinSweep] 27000/36000  20387s elapsed  755 ms/run(wall)  ETA 113.3 min  (failed 0)
+[BasinSweep] 27500/36000  20699s elapsed  753 ms/run(wall)  ETA 106.6 min  (failed 0)
+[BasinSweep] 28000/36000  21021s elapsed  751 ms/run(wall)  ETA 100.1 min  (failed 0)
+[BasinSweep] 28500/36000  21340s elapsed  749 ms/run(wall)  ETA 93.6 min  (failed 0)
+[BasinSweep] 29000/36000  21660s elapsed  747 ms/run(wall)  ETA 87.1 min  (failed 0)
+[BasinSweep] 29500/36000  21986s elapsed  745 ms/run(wall)  ETA 80.7 min  (failed 0)
+[BasinSweep] 30000/36000  22304s elapsed  743 ms/run(wall)  ETA 74.3 min  (failed 0)
+[BasinSweep] 30500/36000  22635s elapsed  742 ms/run(wall)  ETA 68.0 min  (failed 0)
+[BasinSweep] 31000/36000  22953s elapsed  740 ms/run(wall)  ETA 61.7 min  (failed 0)
+[BasinSweep] 31500/36000  23280s elapsed  739 ms/run(wall)  ETA 55.4 min  (failed 0)
+[BasinSweep] 32000/36000  23599s elapsed  737 ms/run(wall)  ETA 49.2 min  (failed 0)
+[BasinSweep] 32500/36000  23924s elapsed  736 ms/run(wall)  ETA 42.9 min  (failed 0)
+[BasinSweep] 33000/36000  24247s elapsed  735 ms/run(wall)  ETA 36.7 min  (failed 0)
+[BasinSweep] 33500/36000  24570s elapsed  733 ms/run(wall)  ETA 30.6 min  (failed 0)
+[BasinSweep] 34000/36000  24897s elapsed  732 ms/run(wall)  ETA 24.4 min  (failed 0)
+[BasinSweep] 34500/36000  25216s elapsed  731 ms/run(wall)  ETA 18.3 min  (failed 0)
+[BasinSweep] 35000/36000  25545s elapsed  730 ms/run(wall)  ETA 12.2 min  (failed 0)
+[BasinSweep] 35500/36000  25864s elapsed  729 ms/run(wall)  ETA 6.1 min  (failed 0)
+[BasinSweep] 36000/36000  26187s elapsed  727 ms/run(wall)  ETA 0.0 min  (failed 0)
+[BasinSweep] DONE -> basin_sweep_v2.csv  (36000 runs, 0 failed)
+[success] Total time: 26198 s (07:16:38), completed Oct 8, 2026, 7:24:11 PM

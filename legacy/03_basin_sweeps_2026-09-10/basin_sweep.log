@@ -1,0 +1,49 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.11)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 2 s, completed Sep 9, 2026, 10:52:36 PM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.BasinSweep --tile-steps 16 --frac-steps 16 --seeds 20 --threads 20 --out basin_sweep.csv
+[BasinSweep] tiles(16, log, dedup)=10,12,15,18,22,27,33,40,49,60,74,90,110,134,164,200
+[BasinSweep] fracs(16, lin)=0.050,0.073,0.097,0.120,0.143,0.167,0.190,0.213,0.237,0.260,0.283,0.307,0.330,0.353,0.377,0.400
+[BasinSweep] hr=0.01,0.03,0.05  seeds=20  threads=20  eps=2.0 pExt=0.5
+[BasinSweep] 15360 / 15360 tasks to run
+[BasinSweep] 500/15360  941s elapsed  1882 ms/run(wall)  ETA 466.1 min  (failed 0)
+[BasinSweep] 1000/15360  1879s elapsed  1879 ms/run(wall)  ETA 449.6 min  (failed 0)
+[BasinSweep] 1500/15360  2835s elapsed  1890 ms/run(wall)  ETA 436.6 min  (failed 0)
+[BasinSweep] 2000/15360  3758s elapsed  1879 ms/run(wall)  ETA 418.3 min  (failed 0)
+[BasinSweep] 2500/15360  4692s elapsed  1877 ms/run(wall)  ETA 402.3 min  (failed 0)
+[BasinSweep] 3000/15360  5657s elapsed  1886 ms/run(wall)  ETA 388.5 min  (failed 0)
+[BasinSweep] 3500/15360  6569s elapsed  1877 ms/run(wall)  ETA 371.0 min  (failed 0)
+[BasinSweep] 4000/15360  7511s elapsed  1878 ms/run(wall)  ETA 355.5 min  (failed 0)
+[BasinSweep] 4500/15360  8467s elapsed  1882 ms/run(wall)  ETA 340.6 min  (failed 0)
+[BasinSweep] 5000/15360  9374s elapsed  1875 ms/run(wall)  ETA 323.7 min  (failed 0)
+[BasinSweep] 5500/15360  10313s elapsed  1875 ms/run(wall)  ETA 308.2 min  (failed 0)
+[BasinSweep] 6000/15360  11274s elapsed  1879 ms/run(wall)  ETA 293.1 min  (failed 0)
+[BasinSweep] 6500/15360  12196s elapsed  1876 ms/run(wall)  ETA 277.1 min  (failed 0)
+[BasinSweep] 7000/15360  13121s elapsed  1874 ms/run(wall)  ETA 261.2 min  (failed 0)
+[BasinSweep] 7500/15360  14086s elapsed  1878 ms/run(wall)  ETA 246.0 min  (failed 0)
+[BasinSweep] 8000/15360  15001s elapsed  1875 ms/run(wall)  ETA 230.0 min  (failed 0)
+[BasinSweep] 8500/15360  15935s elapsed  1875 ms/run(wall)  ETA 214.3 min  (failed 0)
+[BasinSweep] 9000/15360  16899s elapsed  1878 ms/run(wall)  ETA 199.0 min  (failed 0)
+[BasinSweep] 9500/15360  17818s elapsed  1876 ms/run(wall)  ETA 183.2 min  (failed 0)
+[BasinSweep] 10000/15360  18751s elapsed  1875 ms/run(wall)  ETA 167.5 min  (failed 0)
+[BasinSweep] 10500/15360  19716s elapsed  1878 ms/run(wall)  ETA 152.1 min  (failed 0)
+[BasinSweep] 11000/15360  20640s elapsed  1876 ms/run(wall)  ETA 136.3 min  (failed 0)
+[BasinSweep] 11500/15360  21573s elapsed  1876 ms/run(wall)  ETA 120.7 min  (failed 0)
+[BasinSweep] 12000/15360  22535s elapsed  1878 ms/run(wall)  ETA 105.2 min  (failed 0)
+[BasinSweep] 12500/15360  23453s elapsed  1876 ms/run(wall)  ETA 89.4 min  (failed 0)
+[BasinSweep] 13000/15360  24422s elapsed  1879 ms/run(wall)  ETA 73.9 min  (failed 0)
+[BasinSweep] 13500/15360  25412s elapsed  1882 ms/run(wall)  ETA 58.4 min  (failed 0)
+[BasinSweep] 14000/15360  26361s elapsed  1883 ms/run(wall)  ETA 42.7 min  (failed 0)
+[BasinSweep] 14500/15360  27319s elapsed  1884 ms/run(wall)  ETA 27.0 min  (failed 0)
+[BasinSweep] 15000/15360  28311s elapsed  1887 ms/run(wall)  ETA 11.3 min  (failed 0)
+[BasinSweep] 15360/15360  29006s elapsed  1888 ms/run(wall)  ETA 0.0 min  (failed 0)
+[BasinSweep] DONE -> basin_sweep.csv  (15360 runs, 0 failed)
+[success] Total time: 29021 s (08:03:41), completed Sep 10, 2026, 6:56:17 AM

@@ -1,0 +1,5 @@
+# Python deps for the OFFLINE steps (design generation + Sobol analysis).
+# These run on your laptop (or a login node with Python) — NOT inside the SLURM job.
+# The cluster job only needs a JDK; no Python on the compute nodes.
+SALib>=1.4.7
+numpy>=1.21

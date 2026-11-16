@@ -1,0 +1,175 @@
+val fractionProtected = Val[Double]
+val strategy = Val[String]
+val nAdminRegions = Val[Int]
+
+val speciesExtinctions = Val[Double]
+val interactionExtinctions = Val[Double]
+val nTiles = Val[Int]
+
+// A. Landscape structure
+val largestPatchFraction = Val[Double]
+val patchFragmentation = Val[Double]
+
+// B. Species web metrics
+val spMeanInDegree = Val[Double]
+val spMeanOutDegree = Val[Double]
+val spConnectance = Val[Double]
+val spWeakComponents = Val[Double]
+val spDegreeP10 = Val[Double]
+val spDegreeP25 = Val[Double]
+val spDegreeP50 = Val[Double]
+val spDegreeP75 = Val[Double]
+val spDegreeP90 = Val[Double]
+
+// C. Population web metrics
+val popMeanInDegree = Val[Double]
+val popMeanOutDegree = Val[Double]
+val popConnectance = Val[Double]
+val popWeakComponents = Val[Double]
+
+// D. Beta-diversity (post-protection)
+val speciesBetaDiversity = Val[Double]
+val speciesGammaNorm = Val[Double]
+val interactionBetaDiversity = Val[Double]
+val interactionGammaNorm = Val[Double]
+
+// E. Baseline metrics (pre-protection, all tiles)
+val baselineSpAlphaMean = Val[Double]
+val baselineSpAlphaStd = Val[Double]
+val baselineIntAlphaMean = Val[Double]
+val baselineIntAlphaStd = Val[Double]
+val baselineSpBeta = Val[Double]
+val baselineIntBeta = Val[Double]
+
+val avgPopulationsPerTile = Val[Int]
+
+val myseed = Val[Int]
+
+val conservationSim = ScalaTask(
+    """
+    val worldParameters = econetcons.WorldParameters(
+            numberOfSpecies = 200,
+            connectanceMetaWeb = 0.4,
+            areaOverlap = 20.0,
+            medianHomeRange = 0.05,
+            avgPopulationsPerTile = avgPopulationsPerTile,
+            useThinning = false,
+            spreadingFactor = 0.5,
+            useHotspot = false  // Uniform distribution
+        )
+
+    val nTiles = {
+      val numberOfPopulations = (worldParameters.areaOverlap / (worldParameters.medianHomeRange * worldParameters.medianHomeRange)).toInt
+      val side = math.ceil(math.sqrt((numberOfPopulations.toDouble / worldParameters.avgPopulationsPerTile.toDouble))).toInt
+      side * side
+    }
+
+    // Map strategy string to ConservationStrategy enum
+    val conservationStrategy = strategy match {
+      case "Random" => Some(econetcons.ConservationStrategy.Random)
+      case "SpeciesRichness" => Some(econetcons.ConservationStrategy.SpeciesRichness)
+      case "InteractionRichness" => Some(econetcons.ConservationStrategy.InteractionRichness)
+      case "InteractionComplementarity" => Some(econetcons.ConservationStrategy.InteractionComplementarity)
+      case "SpeciesRarity" => Some(econetcons.ConservationStrategy.SpeciesRarity)
+      case "InteractionRarity" => Some(econetcons.ConservationStrategy.InteractionRarity)
+    }
+
+    val conservationParameters = econetcons.ConservationParameters(
+            fractionProtected = fractionProtected,
+            strategy = conservationStrategy,
+            nAdminRegions = nAdminRegions
+        )
+
+    val initialWorld = econetcons.World(
+        worldParameters = worldParameters,
+        conservationParameters = conservationParameters,
+        rnd = Random(myseed)
+    )
+
+    val baseline = econetcons.DiagnosticMetrics.computeBaseline(initialWorld)
+    val baselineSpAlphaMean  = baseline.spAlphaMean
+    val baselineSpAlphaStd   = baseline.spAlphaStd
+    val baselineIntAlphaMean = baseline.intAlphaMean
+    val baselineIntAlphaStd  = baseline.intAlphaStd
+    val baselineSpBeta       = baseline.spBeta
+    val baselineIntBeta      = baseline.intBeta
+
+    val initialIR = initialWorld.getInteractionsRichness()
+    val initialSR = initialWorld.getSpeciesRichness()
+
+    val (finalWorld, nCascades) = initialWorld.extinctions()
+
+    val finalSR = finalWorld.getSpeciesRichness()
+    val finalIR = finalWorld.getInteractionsRichness()
+
+    val speciesExtinctions = (initialSR.toDouble - finalSR.toDouble) / initialSR.toDouble * 100.0
+    val interactionExtinctions = (initialIR.toDouble - finalIR.toDouble) / initialIR.toDouble * 100.0
+
+    val metrics = econetcons.DiagnosticMetrics.compute(finalWorld)
+
+    val largestPatchFraction = metrics.largestPatchFraction
+    val patchFragmentation = metrics.patchFragmentation
+    val spMeanInDegree = metrics.spMeanInDegree
+    val spMeanOutDegree = metrics.spMeanOutDegree
+    val spConnectance = metrics.spConnectance
+    val spWeakComponents = metrics.spWeakComponents
+    val spDegreeP10 = metrics.spDegreeP10
+    val spDegreeP25 = metrics.spDegreeP25
+    val spDegreeP50 = metrics.spDegreeP50
+    val spDegreeP75 = metrics.spDegreeP75
+    val spDegreeP90 = metrics.spDegreeP90
+    val popMeanInDegree = metrics.popMeanInDegree
+    val popMeanOutDegree = metrics.popMeanOutDegree
+    val popConnectance = metrics.popConnectance
+    val popWeakComponents = metrics.popWeakComponents
+    val speciesBetaDiversity = metrics.speciesBetaDiversity
+    val speciesGammaNorm = metrics.speciesGammaNorm
+    val interactionBetaDiversity = metrics.interactionBetaDiversity
+    val interactionGammaNorm = metrics.interactionGammaNorm
+    """
+) set (
+    inputs += (fractionProtected, strategy, avgPopulationsPerTile, nAdminRegions, myseed),
+    outputs += (fractionProtected, strategy, avgPopulationsPerTile, nAdminRegions, nTiles,
+      speciesExtinctions, interactionExtinctions,
+      largestPatchFraction, patchFragmentation,
+      spMeanInDegree, spMeanOutDegree, spConnectance, spWeakComponents,
+      spDegreeP10, spDegreeP25, spDegreeP50, spDegreeP75, spDegreeP90,
+      popMeanInDegree, popMeanOutDegree, popConnectance, popWeakComponents,
+      speciesBetaDiversity, speciesGammaNorm, interactionBetaDiversity, interactionGammaNorm,
+      baselineSpAlphaMean, baselineSpAlphaStd, baselineIntAlphaMean, baselineIntAlphaStd,
+      baselineSpBeta, baselineIntBeta),
+    plugins += pluginsOf(econetcons.World, econetcons.ConservationParameters, econetcons.WorldParameters, econetcons.ConservationStrategy, econetcons.DiagnosticMetrics, econetcons.SimulationMetrics)
+)
+
+
+val atlas =
+  SLURMEnvironment(
+    "integratedmodelling",
+    "atlas-fdr.sw.ehu.es",
+    workDirectory = "/scratch/integratedmodelling/animalitos",
+    sharedDirectory = "/scratch/integratedmodelling/.tmp/",
+    modules = Seq("Apptainer"),
+    partition = "general",
+    qos = "regular",
+    nodes = 3,
+    time = 1 hour,
+    submittedJobs = 72,
+  )
+
+
+val local = LocalEnvironment(4)
+
+val replications = Replication(
+  evaluation = conservationSim,
+  seed = myseed,
+  sample = 100,
+)
+
+DirectSampling(
+  evaluation = replications,
+  sampling =
+    (fractionProtected in (0.0 to 1.0 by 0.05)) x
+    (strategy in Seq("Random", "SpeciesRichness", "InteractionRichness", "SpeciesRarity", "InteractionRarity")) x
+    (avgPopulationsPerTile in Seq(2, 5, 10, 20)) x
+    (nAdminRegions in Seq(1, 4, 9, 16)),
+) hook (workDirectory / "protection_strategy_sweep") on atlas

@@ -1,0 +1,129 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.12.1)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 1 s, completed Oct 9, 2026, 10:48:05 PM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[info] compiling 2 Scala sources to /home/diego/git/ecological.network.conservation/target/scala-3.3.3/classes ...
+[info] done compiling
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.AssemblyDiagnostic --seeds 5 --threads 20 --out assembly_diagnostic.csv
+[AssemblyDiagnostic] 260 worlds, 20 threads -> assembly_diagnostic.csv
+[AssemblyDiagnostic] 20/260  19s  ETA 3.8 min  (failed 0)
+[AssemblyDiagnostic] 40/260  28s  ETA 2.5 min  (failed 0)
+[AssemblyDiagnostic] 60/260  36s  ETA 2.0 min  (failed 0)
+[AssemblyDiagnostic] 80/260  43s  ETA 1.6 min  (failed 0)
+[AssemblyDiagnostic] 100/260  50s  ETA 1.3 min  (failed 0)
+[AssemblyDiagnostic] 120/260  55s  ETA 1.1 min  (failed 0)
+[warn] In the last 10 seconds, 5.066 (50.7%) were spent in GC. [Heap: 0.01GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[warn] In the last 10 seconds, 9.461 (96.3%) were spent in GC. [Heap: 0.01GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.025 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.016 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.016 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.016 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.016 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] 140/260  81s  ETA 1.2 min  (failed 7)
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.016 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.016 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED S1_eps2 c=0.2 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 8.895 (89.5%) were spent in GC. [Heap: 0.06GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.025 seed=2: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.722 (98.8%) were spent in GC. [Heap: 0.01GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.025 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.025 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.05 hr=0.016 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.016 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.05 hr=0.016 seed=5: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 8.444 (86.6%) were spent in GC. [Heap: 0.01GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED S1_eps2 c=0.2 hr=0.025 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.05 hr=0.025 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.2 hr=0.016 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.016 seed=5: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.48 (96.1%) were spent in GC. [Heap: 0.02GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.05 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.025 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.2 hr=0.016 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.05 hr=0.025 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.2 hr=0.025 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] 160/260  120s  ETA 1.3 min  (failed 26)
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.2 hr=0.025 seed=4: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.063 (92.2%) were spent in GC. [Heap: 0.02GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.2 hr=0.016 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.05 hr=0.025 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.05 hr=0.016 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.2 hr=0.016 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.2 hr=0.016 seed=2: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.196 (93.6%) were spent in GC. [Heap: 0.08GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[warn] In the last 10 seconds, 9.721 (98.6%) were spent in GC. [Heap: 0.01GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.05 hr=0.016 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.05 hr=0.016 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.05 hr=0.016 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.05 hr=0.016 seed=5: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.576 (97.2%) were spent in GC. [Heap: 0.02GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.05 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.2 hr=0.016 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED S1_eps2 c=0.2 hr=0.025 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.016 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.05 hr=0.025 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.025 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.05 hr=0.016 seed=2: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 8.126 (81.3%) were spent in GC. [Heap: 0.01GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.016 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C1_th0.5+EB_eps2 c=0.05 hr=0.025 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.2 hr=0.025 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] 180/260  168s  ETA 1.2 min  (failed 45)
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.05 hr=0.025 seed=5: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.225 (94.2%) were spent in GC. [Heap: 0.03GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.2 hr=0.016 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.05 hr=0.016 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.2 hr=0.025 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED S1_eps2 c=0.2 hr=0.025 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.2 hr=0.025 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.2 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.05 hr=0.016 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.2 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 8.889 (90.8%) were spent in GC. [Heap: 0.07GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[warn] In the last 10 seconds, 9.691 (98.5%) were spent in GC. [Heap: 0.02GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.05 hr=0.025 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps2 c=0.2 hr=0.025 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.2 hr=0.016 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.2 hr=0.016 seed=4: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.421 (96.4%) were spent in GC. [Heap: 0.04GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.05 hr=0.025 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.05 hr=0.016 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] 200/260  214s  ETA 1.1 min  (failed 60)
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.05 hr=0.016 seed=4: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.05 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.461 (96.9%) were spent in GC. [Heap: 0.08GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[warn] In the last 10 seconds, 9.563 (97.8%) were spent in GC. [Heap: 0.03GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[warn] In the last 10 seconds, 9.842 (99.1%) were spent in GC. [Heap: 0.02GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.2 hr=0.025 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.2 hr=0.016 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.2 hr=0.016 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.1 c=0.05 hr=0.016 seed=4: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.83 (99.0%) were spent in GC. [Heap: 0.03GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C3_TE0.1 c=0.05 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.2 hr=0.016 seed=3: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.2 hr=0.025 seed=1: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.2 hr=0.025 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.1 c=0.05 hr=0.016 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.05 c=0.2 hr=0.025 seed=4: OutOfMemoryError: Java heap space
+[warn] In the last 10 seconds, 9.648 (97.6%) were spent in GC. [Heap: 0.04GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[warn] In the last 10 seconds, 9.746 (98.7%) were spent in GC. [Heap: 0.03GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.2 hr=0.025 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.1 c=0.05 hr=0.016 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C3_TE0.1 c=0.2 hr=0.016 seed=5: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] FAILED C2_EB_eps6 c=0.2 hr=0.025 seed=2: OutOfMemoryError: Java heap space
+[AssemblyDiagnostic] 220/260  275s  ETA 0.8 min  (failed 76)
+[warn] In the last 10 seconds, 8.586 (85.9%) were spent in GC. [Heap: 0.07GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] 240/260  284s  ETA 0.4 min  (failed 76)
+[warn] In the last 10 seconds, 6.45 (64.5%) were spent in GC. [Heap: 0.15GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[AssemblyDiagnostic] 260/260  621s  ETA 0.0 min  (failed 76)
+[AssemblyDiagnostic] DONE -> assembly_diagnostic.csv  (260 worlds, 76 failed)
+[success] Total time: 625 s (10:25), completed Oct 9, 2026, 10:58:30 PM

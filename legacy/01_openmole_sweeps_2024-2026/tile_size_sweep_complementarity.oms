@@ -1,0 +1,252 @@
+// ─── Sweep: tile size vs complementarity strategies ───────────────────────────
+// Goal: compare the three complementarity strategies across tile sizes.
+// Results are comparable with tile_size_sweep.csv (SR/IR/Random) and
+// tile_size_sweep_alt_strategies.csv (egoIR/connInt) over 100 replicates.
+//
+// Strategies:
+//   SpeciesComplementarity               (_spComp)
+//   EgocentricInteractionComplementarity (_egoComp)
+//   InteractionComplementarity           (_intComp)
+//
+// Fixed parameters (identical across all tile sweeps):
+//   preyPerPredator                  = 0.5
+//   extinctionProbabilityUnprotected = 0.25
+//   observationNoise / falsePositiveRate = 0.0
+//   nAdminRegions = 1
+// Swept parameters:
+//   fractionProtected     in 0.0 to 1.0 by 0.025
+//   avgPopulationsPerTile in Seq(2, 5, 10, 20, 40, 80, 160)
+
+// ─── Inputs ───────────────────────────────────────────────────────────────────
+val fractionProtected     = Val[Double]
+val avgPopulationsPerTile = Val[Int]
+val myseed                = Val[Int]
+
+// ─── Shared landscape diagnostics ────────────────────────────────────────────
+val nTiles              = Val[Int]
+val landscapeAlphaSR    = Val[Double]
+val landscapeAlphaIR    = Val[Double]
+val landscapeAlphaSRstd = Val[Double]
+val landscapeAlphaIRstd = Val[Double]
+val landscapeBetaSR     = Val[Double]
+val landscapeBetaIR     = Val[Double]
+
+// ─── Per-strategy outputs ─────────────────────────────────────────────────────
+// Extinction fractions (%)
+val speciesExtinctions_spComp   = Val[Double]
+val speciesExtinctions_egoComp  = Val[Double]
+val speciesExtinctions_intComp  = Val[Double]
+
+val interactionExtinctions_spComp   = Val[Double]
+val interactionExtinctions_egoComp  = Val[Double]
+val interactionExtinctions_intComp  = Val[Double]
+
+// Cascade counts
+val nCascades_spComp   = Val[Int]
+val nCascades_egoComp  = Val[Int]
+val nCascades_intComp  = Val[Int]
+
+// Primary extinctions
+val primarySpeciesExtinctions_spComp   = Val[Int]
+val primarySpeciesExtinctions_egoComp  = Val[Int]
+val primarySpeciesExtinctions_intComp  = Val[Int]
+
+val primaryInteractionExtinctions_spComp   = Val[Int]
+val primaryInteractionExtinctions_egoComp  = Val[Int]
+val primaryInteractionExtinctions_intComp  = Val[Int]
+
+// Secondary extinctions
+val secondarySpeciesExtinctions_spComp   = Val[Int]
+val secondarySpeciesExtinctions_egoComp  = Val[Int]
+val secondarySpeciesExtinctions_intComp  = Val[Int]
+
+val secondaryInteractionExtinctions_spComp   = Val[Int]
+val secondaryInteractionExtinctions_egoComp  = Val[Int]
+val secondaryInteractionExtinctions_intComp  = Val[Int]
+
+// Beta diversity of protected set (pre-extinction)
+val speciesBetaDiversity_pre_spComp   = Val[Double]
+val speciesBetaDiversity_pre_egoComp  = Val[Double]
+val speciesBetaDiversity_pre_intComp  = Val[Double]
+
+val interactionBetaDiversity_pre_spComp   = Val[Double]
+val interactionBetaDiversity_pre_egoComp  = Val[Double]
+val interactionBetaDiversity_pre_intComp  = Val[Double]
+
+// ─── ScalaTask ────────────────────────────────────────────────────────────────
+val complementaritySweepSim = ScalaTask(
+  """
+  import econetcons._
+
+  val worldParameters = WorldParameters(
+    numberOfSpecies                  = 200,
+    connectanceMetaWeb               = 0.4,
+    areaOverlap                      = 20.0,
+    medianHomeRange                  = 0.05,
+    avgPopulationsPerTile            = avgPopulationsPerTile,
+    useThinning                      = false,
+    spreadingFactor                  = 0.5,
+    extinctionProbabilityUnprotected = 0.25,
+    preyPerPredator                  = 0.5,
+    observationNoise                 = 0.0,
+    falsePositiveRate                = 0.0
+  )
+
+  // ── Tile count (derived, for output) ────────────────────────────────────────
+  val nTiles = {
+    val numberOfPopulations = (worldParameters.areaOverlap / (worldParameters.medianHomeRange * worldParameters.medianHomeRange)).toInt
+    val side = math.ceil(math.sqrt(numberOfPopulations.toDouble / worldParameters.avgPopulationsPerTile.toDouble)).toInt
+    side * side
+  }
+
+  // ── Base world: no protection applied ───────────────────────────────────────
+  val baseWorld = World(
+    worldParameters        = worldParameters,
+    conservationParameters = ConservationParameters(fractionProtected = 0.0, strategy = Some(ConservationStrategy.SpeciesRichness), nAdminRegions = 1),
+    rnd                    = Random(myseed)
+  )
+
+  // ── Landscape diagnostics ────────────────────────────────────────────────────
+  val baselineMetrics     = DiagnosticMetrics.computeBaseline(baseWorld)
+  val landscapeAlphaSR    = baselineMetrics.spAlphaMean
+  val landscapeAlphaIR    = baselineMetrics.intAlphaMean
+  val landscapeAlphaSRstd = baselineMetrics.spAlphaStd
+  val landscapeAlphaIRstd = baselineMetrics.intAlphaStd
+  val landscapeBetaSR     = baselineMetrics.spBeta
+  val landscapeBetaIR     = baselineMetrics.intBeta
+
+  // ── Helper: build a strategy world from the shared base ─────────────────────
+  def buildWorld(strat: ConservationStrategy): World = {
+    val params = ConservationParameters(fractionProtected = fractionProtected, strategy = Some(strat), nAdminRegions = 1)
+    baseWorld.copy(
+      managementLandscape    = baseWorld.managementLandscape.applyProtectionPlan(params, Random(myseed)),
+      conservationParameters = params
+    ).deepCopyForExtinction(Random(myseed))
+  }
+
+  // ── Build strategy worlds ────────────────────────────────────────────────────
+  val worldSpComp  = buildWorld(ConservationStrategy.SpeciesComplementarity)
+  val worldEgoComp = buildWorld(ConservationStrategy.EgocentricInteractionComplementarity)
+  val worldIntComp = buildWorld(ConservationStrategy.InteractionComplementarity)
+
+  // ── Pre-extinction beta diversity ─────────────────────────────────────────────
+  val (spBeta_spComp,  intBeta_spComp)  = DiagnosticMetrics.computeProtectedBetaDiversity(worldSpComp)
+  val (spBeta_egoComp, intBeta_egoComp) = DiagnosticMetrics.computeProtectedBetaDiversity(worldEgoComp)
+  val (spBeta_intComp, intBeta_intComp) = DiagnosticMetrics.computeProtectedBetaDiversity(worldIntComp)
+
+  val speciesBetaDiversity_pre_spComp   = spBeta_spComp
+  val speciesBetaDiversity_pre_egoComp  = spBeta_egoComp
+  val speciesBetaDiversity_pre_intComp  = spBeta_intComp
+  val interactionBetaDiversity_pre_spComp   = intBeta_spComp
+  val interactionBetaDiversity_pre_egoComp  = intBeta_egoComp
+  val interactionBetaDiversity_pre_intComp  = intBeta_intComp
+
+  // ── Run extinctions ──────────────────────────────────────────────────────────
+  val resultSpComp  = worldSpComp.extinctionsDetailed()
+  val resultEgoComp = worldEgoComp.extinctionsDetailed()
+  val resultIntComp = worldIntComp.extinctionsDetailed()
+
+  // ── Helper: extinction fractions ─────────────────────────────────────────────
+  def spExt(r: DetailedExtinctions): Double =
+    if r.initialSpeciesRichness > 0
+    then (r.initialSpeciesRichness - r.finalWorld.getSpeciesRichness()).toDouble / r.initialSpeciesRichness * 100.0
+    else 0.0
+
+  def intExt(r: DetailedExtinctions): Double =
+    val lost = r.primaryInteractionsLost + r.secondaryInteractionsLost
+    if r.initialInteractionsRichness > 0 then lost.toDouble / r.initialInteractionsRichness * 100.0 else 0.0
+
+  // ── Extinction fractions ──────────────────────────────────────────────────────
+  val speciesExtinctions_spComp   = spExt(resultSpComp)
+  val speciesExtinctions_egoComp  = spExt(resultEgoComp)
+  val speciesExtinctions_intComp  = spExt(resultIntComp)
+
+  val interactionExtinctions_spComp   = intExt(resultSpComp)
+  val interactionExtinctions_egoComp  = intExt(resultEgoComp)
+  val interactionExtinctions_intComp  = intExt(resultIntComp)
+
+  // ── Cascade counts ────────────────────────────────────────────────────────────
+  val nCascades_spComp  = resultSpComp.nCascades
+  val nCascades_egoComp = resultEgoComp.nCascades
+  val nCascades_intComp = resultIntComp.nCascades
+
+  // ── Primary extinctions ───────────────────────────────────────────────────────
+  val primarySpeciesExtinctions_spComp  = resultSpComp.primarySpeciesLost
+  val primarySpeciesExtinctions_egoComp = resultEgoComp.primarySpeciesLost
+  val primarySpeciesExtinctions_intComp = resultIntComp.primarySpeciesLost
+
+  val primaryInteractionExtinctions_spComp  = resultSpComp.primaryInteractionsLost
+  val primaryInteractionExtinctions_egoComp = resultEgoComp.primaryInteractionsLost
+  val primaryInteractionExtinctions_intComp = resultIntComp.primaryInteractionsLost
+
+  // ── Secondary extinctions ─────────────────────────────────────────────────────
+  val secondarySpeciesExtinctions_spComp  = resultSpComp.secondarySpeciesLost
+  val secondarySpeciesExtinctions_egoComp = resultEgoComp.secondarySpeciesLost
+  val secondarySpeciesExtinctions_intComp = resultIntComp.secondarySpeciesLost
+
+  val secondaryInteractionExtinctions_spComp  = resultSpComp.secondaryInteractionsLost
+  val secondaryInteractionExtinctions_egoComp = resultEgoComp.secondaryInteractionsLost
+  val secondaryInteractionExtinctions_intComp = resultIntComp.secondaryInteractionsLost
+  """
+) set (
+  inputs  += (fractionProtected, avgPopulationsPerTile, myseed),
+  outputs += (
+    fractionProtected, avgPopulationsPerTile, myseed, nTiles,
+    // Landscape diagnostics
+    landscapeAlphaSR, landscapeAlphaSRstd, landscapeBetaSR,
+    landscapeAlphaIR, landscapeAlphaIRstd, landscapeBetaIR,
+    // Extinction fractions
+    speciesExtinctions_spComp, speciesExtinctions_egoComp, speciesExtinctions_intComp,
+    interactionExtinctions_spComp, interactionExtinctions_egoComp, interactionExtinctions_intComp,
+    // Cascade counts
+    nCascades_spComp, nCascades_egoComp, nCascades_intComp,
+    // Primary extinctions
+    primarySpeciesExtinctions_spComp, primarySpeciesExtinctions_egoComp, primarySpeciesExtinctions_intComp,
+    primaryInteractionExtinctions_spComp, primaryInteractionExtinctions_egoComp, primaryInteractionExtinctions_intComp,
+    // Secondary extinctions
+    secondarySpeciesExtinctions_spComp, secondarySpeciesExtinctions_egoComp, secondarySpeciesExtinctions_intComp,
+    secondaryInteractionExtinctions_spComp, secondaryInteractionExtinctions_egoComp, secondaryInteractionExtinctions_intComp,
+    // Beta diversity of protected set (pre-extinction)
+    speciesBetaDiversity_pre_spComp, speciesBetaDiversity_pre_egoComp, speciesBetaDiversity_pre_intComp,
+    interactionBetaDiversity_pre_spComp, interactionBetaDiversity_pre_egoComp, interactionBetaDiversity_pre_intComp
+  ),
+  plugins += pluginsOf(
+    econetcons.World,
+    econetcons.ConservationParameters,
+    econetcons.WorldParameters,
+    econetcons.ConservationStrategy,
+    econetcons.DiagnosticMetrics,
+    econetcons.SimulationMetrics,
+    econetcons.DetailedExtinctions
+  )
+)
+
+// ─── Environments ─────────────────────────────────────────────────────────────
+val atlas = SLURMEnvironment(
+  "integratedmodelling",
+  "atlas-fdr.sw.ehu.es",
+  workDirectory   = "/scratch/integratedmodelling/animalitos",
+  sharedDirectory = "/scratch/integratedmodelling/.tmp/",
+  modules         = Seq("Apptainer"),
+  partition       = "general",
+  qos             = "regular",
+  nodes           = 3,
+  time            = 2 hours,
+  submittedJobs   = 72,
+)
+
+val local = LocalEnvironment(4)
+
+// ─── Experiment ───────────────────────────────────────────────────────────────
+val replications = Replication(
+  evaluation = complementaritySweepSim,
+  seed       = myseed,
+  sample     = 100,
+)
+
+DirectSampling(
+  evaluation = replications,
+  sampling   =
+    (fractionProtected     in (0.0 to 1.0 by 0.025)) x
+    (avgPopulationsPerTile in Seq(2, 5, 10, 20, 40, 80, 160)),
+) hook (workDirectory / "tile_size_sweep_complementarity") on atlas

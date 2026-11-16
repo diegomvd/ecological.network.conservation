@@ -1,0 +1,44 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.12.1)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 1 s, completed Oct 12, 2026, 2:25:54 PM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.AssemblyDiagnostic --out assembly_diagnostic_biomass.csv --seeds 5 --threads 16 --grid biomass --targetPops 10000
+[AssemblyDiagnostic] 580 worlds, 16 threads -> assembly_diagnostic_biomass.csv
+[AssemblyDiagnostic] 20/580  20s  ETA 9.1 min  (failed 0)
+[AssemblyDiagnostic] 40/580  28s  ETA 6.4 min  (failed 0)
+[AssemblyDiagnostic] 60/580  39s  ETA 5.6 min  (failed 0)
+[AssemblyDiagnostic] 80/580  48s  ETA 5.0 min  (failed 0)
+[AssemblyDiagnostic] 100/580  55s  ETA 4.4 min  (failed 0)
+[AssemblyDiagnostic] 120/580  63s  ETA 4.0 min  (failed 0)
+[AssemblyDiagnostic] 140/580  72s  ETA 3.8 min  (failed 0)
+[AssemblyDiagnostic] 160/580  78s  ETA 3.4 min  (failed 0)
+[AssemblyDiagnostic] 180/580  85s  ETA 3.1 min  (failed 0)
+[AssemblyDiagnostic] 200/580  91s  ETA 2.9 min  (failed 0)
+[AssemblyDiagnostic] 220/580  98s  ETA 2.7 min  (failed 0)
+[AssemblyDiagnostic] 240/580  108s  ETA 2.5 min  (failed 0)
+[AssemblyDiagnostic] 260/580  115s  ETA 2.4 min  (failed 0)
+[AssemblyDiagnostic] 280/580  121s  ETA 2.2 min  (failed 0)
+[AssemblyDiagnostic] 300/580  128s  ETA 2.0 min  (failed 0)
+[AssemblyDiagnostic] 320/580  135s  ETA 1.8 min  (failed 0)
+[AssemblyDiagnostic] 340/580  143s  ETA 1.7 min  (failed 0)
+[AssemblyDiagnostic] 360/580  148s  ETA 1.5 min  (failed 0)
+[AssemblyDiagnostic] 380/580  155s  ETA 1.4 min  (failed 0)
+[AssemblyDiagnostic] 400/580  162s  ETA 1.2 min  (failed 0)
+[AssemblyDiagnostic] 420/580  171s  ETA 1.1 min  (failed 0)
+[AssemblyDiagnostic] 440/580  183s  ETA 1.0 min  (failed 0)
+[AssemblyDiagnostic] 460/580  191s  ETA 0.8 min  (failed 0)
+[AssemblyDiagnostic] 480/580  201s  ETA 0.7 min  (failed 0)
+[AssemblyDiagnostic] 500/580  213s  ETA 0.6 min  (failed 0)
+[AssemblyDiagnostic] 520/580  222s  ETA 0.4 min  (failed 0)
+[AssemblyDiagnostic] 540/580  235s  ETA 0.3 min  (failed 0)
+[AssemblyDiagnostic] 560/580  246s  ETA 0.1 min  (failed 0)
+[AssemblyDiagnostic] 580/580  254s  ETA 0.0 min  (failed 0)
+[AssemblyDiagnostic] DONE -> assembly_diagnostic_biomass.csv  (580 worlds, 0 failed)
+[success] Total time: 257 s (04:17), completed Oct 12, 2026, 2:30:11 PM

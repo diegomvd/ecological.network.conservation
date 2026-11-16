@@ -1,0 +1,28 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.12.1)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 1 s, completed Oct 12, 2026, 2:54:57 PM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[info] compiling 1 Scala source to /home/diego/git/ecological.network.conservation/target/scala-3.3.3/classes ...
+[info] done compiling
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.AssemblyDiagnostic --out assembly_diagnostic_biomass_20k_bw025.csv --seeds 5 --threads 16 --grid biomass --targetPops 20000 --tpBandwidth 0.25 --nPop 10
+[AssemblyDiagnostic] 220 worlds, 16 threads -> assembly_diagnostic_biomass_20k_bw025.csv
+[AssemblyDiagnostic] 20/220  18s  ETA 3.0 min  (failed 0)
+[AssemblyDiagnostic] 40/220  34s  ETA 2.5 min  (failed 0)
+[AssemblyDiagnostic] 60/220  57s  ETA 2.5 min  (failed 0)
+[AssemblyDiagnostic] 80/220  72s  ETA 2.1 min  (failed 0)
+[AssemblyDiagnostic] 100/220  92s  ETA 1.8 min  (failed 0)
+[AssemblyDiagnostic] 120/220  169s  ETA 2.4 min  (failed 0)
+[AssemblyDiagnostic] 140/220  222s  ETA 2.1 min  (failed 0)
+[AssemblyDiagnostic] 160/220  279s  ETA 1.7 min  (failed 0)
+[AssemblyDiagnostic] 180/220  447s  ETA 1.7 min  (failed 0)
+[AssemblyDiagnostic] 200/220  567s  ETA 0.9 min  (failed 0)
+[AssemblyDiagnostic] 220/220  717s  ETA 0.0 min  (failed 0)
+[AssemblyDiagnostic] DONE -> assembly_diagnostic_biomass_20k_bw025.csv  (220 worlds, 0 failed)
+[success] Total time: 721 s (12:01), completed Oct 12, 2026, 3:06:58 PM

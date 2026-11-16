@@ -24,6 +24,8 @@ ThisBuild / assemblyMergeStrategy := {
   case "reference.conf"                                 => MergeStrategy.concat
   case _                                                => MergeStrategy.first
 }
+// NOTE: SaltelliRunner now lives in legacy/scala/ (not compiled). Copy it back to src/ before `sbt assembly`,
+// or point mainClass at a current runner (e.g. econetcons.PaperSweep).
 assembly / mainClass := Some("econetcons.SaltelliRunner")
 assembly / assemblyJarName := "econetcons-saltelli.jar"
 

@@ -1,0 +1,353 @@
+// ─── Shared inputs ───────────────────────────────────────────────────────────
+val fractionProtected                = Val[Double]
+val avgPopulationsPerTile            = Val[Int]
+val myseed                           = Val[Int]
+val extinctionProbabilityUnprotected = Val[Double]
+val dietBreadthThreshold             = Val[Double]
+val preyPerPredator                  = Val[Double]
+
+// ─── Shared single-value outputs (no strategy suffix) ────────────────────────
+val tileOverlapJaccard   = Val[Double]
+val tileRankCorrelation  = Val[Double]
+val spIntCorrelation     = Val[Double]
+val nTiles               = Val[Int]
+
+// ─── Per-strategy outputs: extinction fractions ───────────────────────────────
+val speciesExtinctions_species      = Val[Double]
+val speciesExtinctions_interaction  = Val[Double]
+val interactionExtinctions_species  = Val[Double]
+val interactionExtinctions_interaction = Val[Double]
+
+// ─── Per-strategy outputs: cascade count ────────────────────────────────────
+val nCascades_species     = Val[Int]
+val nCascades_interaction = Val[Int]
+
+// ─── Per-strategy outputs: primary vs secondary extinctions ──────────────────
+val primarySpeciesExtinctions_species         = Val[Int]
+val primarySpeciesExtinctions_interaction     = Val[Int]
+val secondarySpeciesExtinctions_species       = Val[Int]
+val secondarySpeciesExtinctions_interaction   = Val[Int]
+val primaryInteractionExtinctions_species     = Val[Int]
+val primaryInteractionExtinctions_interaction = Val[Int]
+val secondaryInteractionExtinctions_species   = Val[Int]
+val secondaryInteractionExtinctions_interaction = Val[Int]
+
+// ─── Per-strategy outputs: beta diversity of protected set (pre-extinction) ──
+val speciesBetaDiversity_pre_species         = Val[Double]
+val speciesBetaDiversity_pre_interaction     = Val[Double]
+val interactionBetaDiversity_pre_species     = Val[Double]
+val interactionBetaDiversity_pre_interaction = Val[Double]
+
+// ─── Per-strategy outputs: beta diversity of protected set (post-extinction) ─
+val speciesBetaDiversity_post_species         = Val[Double]
+val speciesBetaDiversity_post_interaction     = Val[Double]
+val interactionBetaDiversity_post_species     = Val[Double]
+val interactionBetaDiversity_post_interaction = Val[Double]
+
+// ─── Per-strategy outputs: metaweb centrality ────────────────────────────────
+val extinctMeanBetweenness_species    = Val[Double]
+val extinctMeanBetweenness_interaction = Val[Double]
+val survivingMeanBetweenness_species   = Val[Double]
+val survivingMeanBetweenness_interaction = Val[Double]
+val extinctMeanInDegree_species       = Val[Double]
+val extinctMeanInDegree_interaction   = Val[Double]
+val extinctMeanOutDegree_species      = Val[Double]
+val extinctMeanOutDegree_interaction  = Val[Double]
+val survivingMeanInDegree_species     = Val[Double]
+val survivingMeanInDegree_interaction = Val[Double]
+val survivingMeanOutDegree_species    = Val[Double]
+val survivingMeanOutDegree_interaction = Val[Double]
+
+// ─── Per-strategy outputs: ConnectivityInteraction blend ─────────────────────
+val speciesExtinctions_connint              = Val[Double]
+val interactionExtinctions_connint          = Val[Double]
+val nCascades_connint                       = Val[Int]
+val primarySpeciesExtinctions_connint       = Val[Int]
+val secondarySpeciesExtinctions_connint     = Val[Int]
+val primaryInteractionExtinctions_connint   = Val[Int]
+val secondaryInteractionExtinctions_connint = Val[Int]
+val speciesBetaDiversity_pre_connint        = Val[Double]
+val interactionBetaDiversity_pre_connint    = Val[Double]
+val speciesBetaDiversity_post_connint       = Val[Double]
+val interactionBetaDiversity_post_connint   = Val[Double]
+val extinctMeanBetweenness_connint          = Val[Double]
+val survivingMeanBetweenness_connint        = Val[Double]
+val extinctMeanInDegree_connint             = Val[Double]
+val extinctMeanOutDegree_connint            = Val[Double]
+val survivingMeanInDegree_connint           = Val[Double]
+val survivingMeanOutDegree_connint          = Val[Double]
+
+// ─── Observation noise parameters ────────────────────────────────────────────
+val observationNoise  = Val[Double]
+val falsePositiveRate = Val[Double]
+
+// ─── ScalaTask ───────────────────────────────────────────────────────────────
+val strategyComparisonSim = ScalaTask(
+  """
+  import econetcons._
+
+  val worldParameters = WorldParameters(
+    numberOfSpecies                  = 200,
+    connectanceMetaWeb               = 0.4,
+    areaOverlap                      = 20.0,
+    medianHomeRange                  = 0.05,
+    avgPopulationsPerTile            = avgPopulationsPerTile,
+    useThinning                      = false,
+    spreadingFactor                  = 0.5,
+    useHotspot                       = false,
+    extinctionProbabilityUnprotected = extinctionProbabilityUnprotected,
+    dietBreadthThreshold             = dietBreadthThreshold,
+    preyPerPredator                  = preyPerPredator,
+    observationNoise                 = observationNoise,
+    falsePositiveRate                = falsePositiveRate
+  )
+
+  val nTiles = {
+    val numberOfPopulations = (worldParameters.areaOverlap / (worldParameters.medianHomeRange * worldParameters.medianHomeRange)).toInt
+    val side = math.ceil(math.sqrt(numberOfPopulations.toDouble / worldParameters.avgPopulationsPerTile.toDouble)).toInt
+    side * side
+  }
+
+  // Build ONE base world with no protection — same metaweb, populations, and spatial layout
+  // for both strategies. fractionProtected=0.0 means applyProtectionPlan is a no-op,
+  // so the rnd state is not consumed by tile selection during world construction.
+  val baseConservationParameters = ConservationParameters(
+    fractionProtected = 0.0,
+    strategy          = Some(ConservationStrategy.SpeciesRichness),
+    nAdminRegions     = 1
+  )
+
+  val baseWorld = World(
+    worldParameters      = worldParameters,
+    conservationParameters = baseConservationParameters,
+    rnd                  = Random(myseed)
+  )
+
+  // Apply each protection strategy to the identical base landscape,
+  // each with a fresh Random(myseed) so tile-selection randomness is also identical.
+  val spParams = ConservationParameters(
+    fractionProtected = fractionProtected,
+    strategy          = Some(ConservationStrategy.SpeciesRichness),
+    nAdminRegions     = 1
+  )
+  val intParams = ConservationParameters(
+    fractionProtected = fractionProtected,
+    strategy          = Some(ConservationStrategy.InteractionRichness),
+    nAdminRegions     = 1
+  )
+
+  val worldWithSpStrategy = baseWorld.copy(
+    managementLandscape    = baseWorld.managementLandscape.applyProtectionPlan(spParams,  Random(myseed)),
+    conservationParameters = spParams
+  ).deepCopyForExtinction(Random(myseed))
+
+  val worldWithIntStrategy = baseWorld.copy(
+    managementLandscape    = baseWorld.managementLandscape.applyProtectionPlan(intParams, Random(myseed)),
+    conservationParameters = intParams
+  ).deepCopyForExtinction(Random(myseed))
+
+  val connIntParams = ConservationParameters(
+    fractionProtected = fractionProtected,
+    strategy          = Some(ConservationStrategy.ConnectivityInteraction),
+    nAdminRegions     = 1
+  )
+  val worldWithConnIntStrategy = baseWorld.copy(
+    managementLandscape    = baseWorld.managementLandscape.applyProtectionPlan(connIntParams, Random(myseed)),
+    conservationParameters = connIntParams
+  ).deepCopyForExtinction(Random(myseed))
+
+  // ── Pre-extinction diagnostics ────────────────────────────────────────────
+  val comparisonMetrics = DiagnosticMetrics.computeStrategyComparison(worldWithSpStrategy, worldWithIntStrategy)
+  val tileOverlapJaccard  = comparisonMetrics.tileOverlapJaccard
+  val tileRankCorrelation = comparisonMetrics.tileRankCorrelation
+  val spIntCorrelation    = comparisonMetrics.spIntCorrelation
+
+  val (spBeta_pre_species, intBeta_pre_species)      = DiagnosticMetrics.computeProtectedBetaDiversity(worldWithSpStrategy)
+  val (spBeta_pre_interaction, intBeta_pre_interaction) = DiagnosticMetrics.computeProtectedBetaDiversity(worldWithIntStrategy)
+  val (spBeta_pre_connint, intBeta_pre_connint)      = DiagnosticMetrics.computeProtectedBetaDiversity(worldWithConnIntStrategy)
+
+  // ── Run extinctions (detailed) ────────────────────────────────────────────
+  val resultSp      = worldWithSpStrategy.extinctionsDetailed()
+  val resultInt     = worldWithIntStrategy.extinctionsDetailed()
+  val resultConnInt = worldWithConnIntStrategy.extinctionsDetailed()
+
+  val finalWorldSp      = resultSp.finalWorld
+  val finalWorldInt     = resultInt.finalWorld
+  val finalWorldConnInt = resultConnInt.finalWorld
+
+  // ── Extinction fractions ──────────────────────────────────────────────────
+  // getSpeciesRichness() reads the immutable populations Seq — safe after extinctionsDetailed().
+  // getInteractionsRichness() reads the mutable JGraphT graph which is depleted in-place,
+  // so we use initialInteractionsRichness captured inside extinctionsDetailed() before
+  // any mutation, and reconstruct finals from the absolute lost counts.
+  val initialSR_sp      = resultSp.initialSpeciesRichness
+  val initialIR_sp      = resultSp.initialInteractionsRichness
+  val initialSR_int     = resultInt.initialSpeciesRichness
+  val initialIR_int     = resultInt.initialInteractionsRichness
+  val initialSR_connint = resultConnInt.initialSpeciesRichness
+  val initialIR_connint = resultConnInt.initialInteractionsRichness
+
+  val finalSR_sp      = finalWorldSp.getSpeciesRichness()
+  val finalSR_int     = finalWorldInt.getSpeciesRichness()
+  val finalSR_connint = finalWorldConnInt.getSpeciesRichness()
+
+  val irLost_sp      = resultSp.primaryInteractionsLost      + resultSp.secondaryInteractionsLost
+  val irLost_int     = resultInt.primaryInteractionsLost     + resultInt.secondaryInteractionsLost
+  val irLost_connint = resultConnInt.primaryInteractionsLost + resultConnInt.secondaryInteractionsLost
+
+  val speciesExtinctions_species         = if initialSR_sp      > 0 then (initialSR_sp      - finalSR_sp).toDouble      / initialSR_sp      * 100.0 else 0.0
+  val interactionExtinctions_species     = if initialIR_sp      > 0 then irLost_sp.toDouble      / initialIR_sp      * 100.0 else 0.0
+  val speciesExtinctions_interaction     = if initialSR_int     > 0 then (initialSR_int     - finalSR_int).toDouble     / initialSR_int     * 100.0 else 0.0
+  val interactionExtinctions_interaction = if initialIR_int     > 0 then irLost_int.toDouble     / initialIR_int     * 100.0 else 0.0
+  val speciesExtinctions_connint         = if initialSR_connint > 0 then (initialSR_connint - finalSR_connint).toDouble / initialSR_connint * 100.0 else 0.0
+  val interactionExtinctions_connint     = if initialIR_connint > 0 then irLost_connint.toDouble / initialIR_connint * 100.0 else 0.0
+
+  // ── Cascade counts ────────────────────────────────────────────────────────
+  val nCascades_species     = resultSp.nCascades
+  val nCascades_interaction = resultInt.nCascades
+  val nCascades_connint     = resultConnInt.nCascades
+
+  // ── Primary vs secondary breakdown ───────────────────────────────────────
+  val primarySpeciesExtinctions_species         = resultSp.primarySpeciesLost
+  val primarySpeciesExtinctions_interaction     = resultInt.primarySpeciesLost
+  val primarySpeciesExtinctions_connint         = resultConnInt.primarySpeciesLost
+  val secondarySpeciesExtinctions_species       = resultSp.secondarySpeciesLost
+  val secondarySpeciesExtinctions_interaction   = resultInt.secondarySpeciesLost
+  val secondarySpeciesExtinctions_connint       = resultConnInt.secondarySpeciesLost
+  val primaryInteractionExtinctions_species     = resultSp.primaryInteractionsLost
+  val primaryInteractionExtinctions_interaction = resultInt.primaryInteractionsLost
+  val primaryInteractionExtinctions_connint     = resultConnInt.primaryInteractionsLost
+  val secondaryInteractionExtinctions_species   = resultSp.secondaryInteractionsLost
+  val secondaryInteractionExtinctions_interaction = resultInt.secondaryInteractionsLost
+  val secondaryInteractionExtinctions_connint   = resultConnInt.secondaryInteractionsLost
+
+  // ── Post-extinction beta diversity ────────────────────────────────────────
+  val (spBeta_post_species, intBeta_post_species)       = DiagnosticMetrics.computeProtectedBetaDiversity(finalWorldSp)
+  val (spBeta_post_interaction, intBeta_post_interaction) = DiagnosticMetrics.computeProtectedBetaDiversity(finalWorldInt)
+  val (spBeta_post_connint, intBeta_post_connint)       = DiagnosticMetrics.computeProtectedBetaDiversity(finalWorldConnInt)
+
+  val speciesBetaDiversity_pre_species          = spBeta_pre_species
+  val speciesBetaDiversity_pre_interaction      = spBeta_pre_interaction
+  val speciesBetaDiversity_pre_connint          = spBeta_pre_connint
+  val interactionBetaDiversity_pre_species      = intBeta_pre_species
+  val interactionBetaDiversity_pre_interaction  = intBeta_pre_interaction
+  val interactionBetaDiversity_pre_connint      = intBeta_pre_connint
+  val speciesBetaDiversity_post_species         = spBeta_post_species
+  val speciesBetaDiversity_post_interaction     = spBeta_post_interaction
+  val speciesBetaDiversity_post_connint         = spBeta_post_connint
+  val interactionBetaDiversity_post_species     = intBeta_post_species
+  val interactionBetaDiversity_post_interaction = intBeta_post_interaction
+  val interactionBetaDiversity_post_connint     = intBeta_post_connint
+
+  // ── Metaweb centrality ────────────────────────────────────────────────────
+  // The metaweb is shared (same seed), so use worldWithSpStrategy.metaWeb
+  val metaWeb = worldWithSpStrategy.metaWeb
+
+  val initialSpeciesIds_sp      = worldWithSpStrategy.populations.filter(!_.extinct).map(_.species.id).toSet
+  val initialSpeciesIds_int     = worldWithIntStrategy.populations.filter(!_.extinct).map(_.species.id).toSet
+  val initialSpeciesIds_connint = worldWithConnIntStrategy.populations.filter(!_.extinct).map(_.species.id).toSet
+  val finalSpeciesIds_sp        = finalWorldSp.populations.filter(!_.extinct).map(_.species.id).toSet
+  val finalSpeciesIds_int       = finalWorldInt.populations.filter(!_.extinct).map(_.species.id).toSet
+  val finalSpeciesIds_connint   = finalWorldConnInt.populations.filter(!_.extinct).map(_.species.id).toSet
+
+  val extinctIds_sp      = initialSpeciesIds_sp      -- finalSpeciesIds_sp
+  val extinctIds_int     = initialSpeciesIds_int     -- finalSpeciesIds_int
+  val extinctIds_connint = initialSpeciesIds_connint -- finalSpeciesIds_connint
+
+  val centralitySp      = DiagnosticMetrics.computeMetawebCentrality(extinctIds_sp,      metaWeb)
+  val centralityInt     = DiagnosticMetrics.computeMetawebCentrality(extinctIds_int,     metaWeb)
+  val centralityConnInt = DiagnosticMetrics.computeMetawebCentrality(extinctIds_connint, metaWeb)
+
+  val extinctMeanBetweenness_species     = centralitySp.extinctMeanBetweenness
+  val extinctMeanBetweenness_interaction = centralityInt.extinctMeanBetweenness
+  val extinctMeanBetweenness_connint     = centralityConnInt.extinctMeanBetweenness
+  val survivingMeanBetweenness_species   = centralitySp.survivingMeanBetweenness
+  val survivingMeanBetweenness_interaction = centralityInt.survivingMeanBetweenness
+  val survivingMeanBetweenness_connint   = centralityConnInt.survivingMeanBetweenness
+  val extinctMeanInDegree_species        = centralitySp.extinctMeanInDegree
+  val extinctMeanInDegree_interaction    = centralityInt.extinctMeanInDegree
+  val extinctMeanInDegree_connint        = centralityConnInt.extinctMeanInDegree
+  val extinctMeanOutDegree_species       = centralitySp.extinctMeanOutDegree
+  val extinctMeanOutDegree_interaction   = centralityInt.extinctMeanOutDegree
+  val extinctMeanOutDegree_connint       = centralityConnInt.extinctMeanOutDegree
+  val survivingMeanInDegree_species      = centralitySp.survivingMeanInDegree
+  val survivingMeanInDegree_interaction  = centralityInt.survivingMeanInDegree
+  val survivingMeanInDegree_connint      = centralityConnInt.survivingMeanInDegree
+  val survivingMeanOutDegree_species     = centralitySp.survivingMeanOutDegree
+  val survivingMeanOutDegree_interaction = centralityInt.survivingMeanOutDegree
+  val survivingMeanOutDegree_connint     = centralityConnInt.survivingMeanOutDegree
+  """
+) set (
+  inputs  += (fractionProtected, avgPopulationsPerTile, myseed, extinctionProbabilityUnprotected, dietBreadthThreshold, preyPerPredator, observationNoise, falsePositiveRate),
+  outputs += (
+    fractionProtected, avgPopulationsPerTile, nTiles, extinctionProbabilityUnprotected, dietBreadthThreshold, preyPerPredator, observationNoise, falsePositiveRate,
+    // Shared single-value metrics
+    tileOverlapJaccard, tileRankCorrelation, spIntCorrelation,
+    // Extinction fractions
+    speciesExtinctions_species, speciesExtinctions_interaction, speciesExtinctions_connint,
+    interactionExtinctions_species, interactionExtinctions_interaction, interactionExtinctions_connint,
+    // Cascade counts
+    nCascades_species, nCascades_interaction, nCascades_connint,
+    // Primary vs secondary breakdown
+    primarySpeciesExtinctions_species, primarySpeciesExtinctions_interaction, primarySpeciesExtinctions_connint,
+    secondarySpeciesExtinctions_species, secondarySpeciesExtinctions_interaction, secondarySpeciesExtinctions_connint,
+    primaryInteractionExtinctions_species, primaryInteractionExtinctions_interaction, primaryInteractionExtinctions_connint,
+    secondaryInteractionExtinctions_species, secondaryInteractionExtinctions_interaction, secondaryInteractionExtinctions_connint,
+    // Beta diversity pre-extinction
+    speciesBetaDiversity_pre_species, speciesBetaDiversity_pre_interaction, speciesBetaDiversity_pre_connint,
+    interactionBetaDiversity_pre_species, interactionBetaDiversity_pre_interaction, interactionBetaDiversity_pre_connint,
+    // Beta diversity post-extinction
+    speciesBetaDiversity_post_species, speciesBetaDiversity_post_interaction, speciesBetaDiversity_post_connint,
+    interactionBetaDiversity_post_species, interactionBetaDiversity_post_interaction, interactionBetaDiversity_post_connint,
+    // Metaweb centrality
+    extinctMeanBetweenness_species, extinctMeanBetweenness_interaction, extinctMeanBetweenness_connint,
+    survivingMeanBetweenness_species, survivingMeanBetweenness_interaction, survivingMeanBetweenness_connint,
+    extinctMeanInDegree_species, extinctMeanInDegree_interaction, extinctMeanInDegree_connint,
+    extinctMeanOutDegree_species, extinctMeanOutDegree_interaction, extinctMeanOutDegree_connint,
+    survivingMeanInDegree_species, survivingMeanInDegree_interaction, survivingMeanInDegree_connint,
+    survivingMeanOutDegree_species, survivingMeanOutDegree_interaction, survivingMeanOutDegree_connint
+  ),
+  plugins += pluginsOf(
+    econetcons.World,
+    econetcons.ConservationParameters,
+    econetcons.WorldParameters,
+    econetcons.ConservationStrategy,
+    econetcons.DiagnosticMetrics,
+    econetcons.SimulationMetrics,
+    econetcons.DetailedExtinctions
+  )
+)
+
+
+val atlas =
+  SLURMEnvironment(
+    "integratedmodelling",
+    "atlas-fdr.sw.ehu.es",
+    workDirectory    = "/scratch/integratedmodelling/animalitos",
+    sharedDirectory  = "/scratch/integratedmodelling/.tmp/",
+    modules          = Seq("Apptainer"),
+    partition        = "general",
+    qos              = "regular",
+    nodes            = 3,
+    time             = 1 hour,
+    submittedJobs    = 72,
+  )
+
+val local = LocalEnvironment(4)
+
+val replications = Replication(
+  evaluation = strategyComparisonSim,
+  seed       = myseed,
+  sample     = 100,
+)
+
+DirectSampling(
+  evaluation = replications,
+  sampling   =
+    (fractionProtected in (0.0 to 1.0 by 0.05)) x
+    (avgPopulationsPerTile in Seq(2, 5, 10, 20)) x
+    (extinctionProbabilityUnprotected in Seq(0.10, 0.20, 0.35, 0.50)) x
+    (preyPerPredator in Seq(0.2, 0.5, 1.0, 2.0, 5.0)) x
+    (observationNoise in Seq(0.0, 0.1, 0.2, 0.3)) x
+    (falsePositiveRate in Seq(0.0, 0.1, 0.2, 0.3)),
+) hook (workDirectory / "strategy_comparison_sweep") on atlas

@@ -1,0 +1,301 @@
+// ─── Community-parametrization audit ─────────────────────────────────────────
+// Goal: characterize the ECOLOGICAL COMMUNITY at construction time (pre-extinction,
+// fractionProtected = 0, no extinctions run) as a function of the community-shaping
+// knobs — spatial structure and home-range/density — BEFORE returning to
+// protection-strategy experiments.
+//
+// Captures:
+//   • spatial distribution of populations (occupancy, clustering, species extent)
+//   • home-range / density (population counts, per-tile density, network density)
+//   • degree-distribution SHAPE at both the species (realized web) and population
+//     (population web) levels, via fixed-width binned histograms.
+//
+// Fixed parameters (community structure held constant, matching existing sweeps):
+//   numberOfSpecies    = 200
+//   connectanceMetaWeb = 0.4
+//   (body-size scaling left at model defaults)
+//
+// Swept parameters (community-shaping knobs):
+//   Home range & density: medianHomeRange, areaOverlap, avgPopulationsPerTile
+//   Spatial structure:    spreadingFactor, useThinning
+// A separate, smaller hotspot sampling varies aggregationStrength × hotspotVariance.
+//
+// Degree histograms use 16 bins: index 0..14 are exact total degrees 0..14,
+// index 15 is the overflow bin (degree >= 15). Must match DEGREE_BINS in the
+// ScalaTask body and the plotting script.
+
+// ─── Inputs ───────────────────────────────────────────────────────────────────
+// NOTE: avgPopulationsPerTile is NOT swept by OpenMOLE. It only controls the grid
+// resolution (nTiles = numberOfPopulations / avgPopulationsPerTile) and never touches
+// metaweb/population/web generation. So we build each community ONCE and re-tile it at
+// several tile sizes inside the task, emitting one output row per (community, tileSize).
+// This cuts full community builds ~3x versus sweeping avgPopulationsPerTile.
+val medianHomeRange       = Val[Double]
+val areaOverlap           = Val[Double]
+val spreadingFactor       = Val[Double]
+val useThinning           = Val[Boolean]
+val useHotspot            = Val[Boolean]
+val hotspotVariance       = Val[Double]
+val aggregationStrength   = Val[Double]
+val myseed                = Val[Int]
+
+// ─── Per-tile-size outputs (arrays; one element per tile size, expanded by hook) ─
+// The hook expands these arrays into one CSV row per tile size, keeping a tidy
+// one-row-per-(community, tileSize) schema for the plotting script.
+val avgPopulationsPerTile = Val[Array[Int]]
+val nTiles                = Val[Array[Int]]
+val occupancyRate             = Val[Array[Double]]
+val avgPopsPerOccupiedTile    = Val[Array[Double]]
+val emptyTiles                = Val[Array[Int]]
+val avgSpeciesPerOccupiedTile = Val[Array[Double]]
+val maxSpeciesInTile          = Val[Array[Int]]
+val tileGiniCoefficient       = Val[Array[Double]]
+val speciesCoOccurrence       = Val[Array[Double]]
+val landscapeBetaSR           = Val[Array[Double]]
+val landscapeBetaIR           = Val[Array[Double]]
+
+// ─── Derived context (community-level, tile-independent) ────────────────────────
+val numberOfPopulations = Val[Int]
+
+// ─── Spatial-distribution outputs (community-level, tile-independent) ───────────
+val totalPopulations          = Val[Int]
+val populationsInNetwork      = Val[Int]
+val avgPopsPerSpecies         = Val[Double]
+val avgSpeciesDiameter        = Val[Double]
+val minSpeciesDiameter        = Val[Double]
+val maxSpeciesDiameter        = Val[Double]
+val speciesCoveringLandscape  = Val[Int]
+val avgSpeciesBBoxArea        = Val[Double]
+val minSpeciesBBoxArea        = Val[Double]
+val maxSpeciesBBoxArea        = Val[Double]
+val networkDensity            = Val[Double]
+val avgInteractionsPerPop     = Val[Double]
+
+// ─── Network / degree summary outputs (from DiagnosticMetrics) ──────────────────
+val spMeanInDegree   = Val[Double]
+val spMeanOutDegree  = Val[Double]
+val spConnectance    = Val[Double]
+val spWeakComponents = Val[Double]
+val spDegreeP10      = Val[Double]
+val spDegreeP25      = Val[Double]
+val spDegreeP50      = Val[Double]
+val spDegreeP75      = Val[Double]
+val spDegreeP90      = Val[Double]
+val popMeanInDegree   = Val[Double]
+val popMeanOutDegree  = Val[Double]
+val popConnectance    = Val[Double]
+val popWeakComponents = Val[Double]
+
+// ─── Degree-distribution histogram bins (total degree) ──────────────────────────
+// Species realized web
+val spDegBin0  = Val[Int]; val spDegBin1  = Val[Int]; val spDegBin2  = Val[Int]; val spDegBin3  = Val[Int]
+val spDegBin4  = Val[Int]; val spDegBin5  = Val[Int]; val spDegBin6  = Val[Int]; val spDegBin7  = Val[Int]
+val spDegBin8  = Val[Int]; val spDegBin9  = Val[Int]; val spDegBin10 = Val[Int]; val spDegBin11 = Val[Int]
+val spDegBin12 = Val[Int]; val spDegBin13 = Val[Int]; val spDegBin14 = Val[Int]; val spDegBin15 = Val[Int]
+// Population web
+val popDegBin0  = Val[Int]; val popDegBin1  = Val[Int]; val popDegBin2  = Val[Int]; val popDegBin3  = Val[Int]
+val popDegBin4  = Val[Int]; val popDegBin5  = Val[Int]; val popDegBin6  = Val[Int]; val popDegBin7  = Val[Int]
+val popDegBin8  = Val[Int]; val popDegBin9  = Val[Int]; val popDegBin10 = Val[Int]; val popDegBin11 = Val[Int]
+val popDegBin12 = Val[Int]; val popDegBin13 = Val[Int]; val popDegBin14 = Val[Int]; val popDegBin15 = Val[Int]
+
+// ─── ScalaTask ────────────────────────────────────────────────────────────────
+val communityAuditSim = ScalaTask(
+  """
+  import econetcons._
+
+  val DEGREE_BINS = 16
+
+  // Tile sizes to characterize for the SAME community (was an OpenMOLE sweep axis).
+  val TILE_SIZES = Array(5, 10, 20)
+
+  val worldParameters = WorldParameters(
+    numberOfSpecies       = 200,
+    connectanceMetaWeb    = 0.4,
+    areaOverlap           = areaOverlap,
+    medianHomeRange       = medianHomeRange,
+    avgPopulationsPerTile = TILE_SIZES(0),  // placeholder; re-tiling below overrides the grid
+    useHotspot            = useHotspot,
+    hotspotVariance       = hotspotVariance,
+    aggregationStrength   = aggregationStrength,
+    useThinning           = useThinning,
+    spreadingFactor       = spreadingFactor
+  )
+
+  // ── Derived context (tile-independent) ──────────────────────────────────────
+  val numberOfPopulations =
+    (worldParameters.areaOverlap / (worldParameters.medianHomeRange * worldParameters.medianHomeRange)).toInt
+
+  // ── Base world: no protection, no extinctions (pure community) ──────────────
+  // Built ONCE; re-tiled at each tile size for the tile-dependent metrics.
+  val baseConservationParameters = ConservationParameters(
+    fractionProtected = 0.0,
+    strategy          = Some(ConservationStrategy.Random),
+    nAdminRegions     = 1
+  )
+  val baseWorld = World(
+    worldParameters        = worldParameters,
+    conservationParameters = baseConservationParameters,
+    rnd                    = Random(myseed)
+  )
+
+  // ── Per-tile-size metrics: re-tile the SAME world at each tile size ──────────
+  // avgPopulationsPerTile only changes the grid; SpatialDiagnostics.analyzeWorld and
+  // DiagnosticMetrics.betaForGrid re-bucket the already-placed populations (cheap).
+  val avgPopulationsPerTile = TILE_SIZES
+  val perTile = TILE_SIZES.map { tsize =>
+    val sp = SpatialDiagnostics.analyzeWorld("audit", baseWorld, tsize)
+    val (betaSR, betaIR) = DiagnosticMetrics.betaForGrid(baseWorld, tsize)
+    (sp, betaSR, betaIR)
+  }
+  val nTiles                    = perTile.map(_._1.totalTiles)
+  val occupancyRate             = perTile.map(_._1.occupancyRate)
+  val avgPopsPerOccupiedTile    = perTile.map(_._1.avgPopsPerOccupiedTile)
+  val emptyTiles                = perTile.map(_._1.emptyTiles)
+  val avgSpeciesPerOccupiedTile = perTile.map(_._1.avgSpeciesPerOccupiedTile)
+  val maxSpeciesInTile          = perTile.map(_._1.maxSpeciesInTile)
+  val tileGiniCoefficient       = perTile.map(_._1.tileGiniCoefficient)
+  val speciesCoOccurrence       = perTile.map(_._1.speciesCoOccurrence)
+  val landscapeBetaSR           = perTile.map(_._2)
+  val landscapeBetaIR           = perTile.map(_._3)
+
+  // ── Community-level spatial metrics (tile-independent; take from first tiling) ─
+  val spatial0 = perTile(0)._1
+  val totalPopulations          = spatial0.totalPopulations
+  val populationsInNetwork      = spatial0.populationsInNetwork
+  val avgPopsPerSpecies         = spatial0.avgPopsPerSpecies
+  val avgSpeciesDiameter        = spatial0.avgSpeciesDiameter
+  val minSpeciesDiameter        = spatial0.minSpeciesDiameter
+  val maxSpeciesDiameter        = spatial0.maxSpeciesDiameter
+  val speciesCoveringLandscape  = spatial0.speciesCoveringLandscape
+  val avgSpeciesBBoxArea        = spatial0.avgSpeciesBBoxArea
+  val minSpeciesBBoxArea        = spatial0.minSpeciesBBoxArea
+  val maxSpeciesBBoxArea        = spatial0.maxSpeciesBBoxArea
+  val networkDensity            = spatial0.networkDensity
+  val avgInteractionsPerPop     = spatial0.avgInteractionsPerPop
+
+  // ── Network metrics (reuses DiagnosticMetrics; tile-independent) ────────────
+  val sim      = DiagnosticMetrics.compute(baseWorld)
+  val spMeanInDegree   = sim.spMeanInDegree
+  val spMeanOutDegree  = sim.spMeanOutDegree
+  val spConnectance    = sim.spConnectance
+  val spWeakComponents = sim.spWeakComponents
+  val spDegreeP10 = sim.spDegreeP10
+  val spDegreeP25 = sim.spDegreeP25
+  val spDegreeP50 = sim.spDegreeP50
+  val spDegreeP75 = sim.spDegreeP75
+  val spDegreeP90 = sim.spDegreeP90
+  val popMeanInDegree   = sim.popMeanInDegree
+  val popMeanOutDegree  = sim.popMeanOutDegree
+  val popConnectance    = sim.popConnectance
+  val popWeakComponents = sim.popWeakComponents
+
+  // ── Degree-distribution histograms (total degree, fixed 16 bins) ────────────
+  val spHist  = DiagnosticMetrics.degreeHistogram(baseWorld.getRealizedWeb, DEGREE_BINS)
+  val popHist = DiagnosticMetrics.degreeHistogram(baseWorld.populationWeb, DEGREE_BINS)
+
+  val spDegBin0  = spHist.totalBins(0);  val spDegBin1  = spHist.totalBins(1)
+  val spDegBin2  = spHist.totalBins(2);  val spDegBin3  = spHist.totalBins(3)
+  val spDegBin4  = spHist.totalBins(4);  val spDegBin5  = spHist.totalBins(5)
+  val spDegBin6  = spHist.totalBins(6);  val spDegBin7  = spHist.totalBins(7)
+  val spDegBin8  = spHist.totalBins(8);  val spDegBin9  = spHist.totalBins(9)
+  val spDegBin10 = spHist.totalBins(10); val spDegBin11 = spHist.totalBins(11)
+  val spDegBin12 = spHist.totalBins(12); val spDegBin13 = spHist.totalBins(13)
+  val spDegBin14 = spHist.totalBins(14); val spDegBin15 = spHist.totalBins(15)
+
+  val popDegBin0  = popHist.totalBins(0);  val popDegBin1  = popHist.totalBins(1)
+  val popDegBin2  = popHist.totalBins(2);  val popDegBin3  = popHist.totalBins(3)
+  val popDegBin4  = popHist.totalBins(4);  val popDegBin5  = popHist.totalBins(5)
+  val popDegBin6  = popHist.totalBins(6);  val popDegBin7  = popHist.totalBins(7)
+  val popDegBin8  = popHist.totalBins(8);  val popDegBin9  = popHist.totalBins(9)
+  val popDegBin10 = popHist.totalBins(10); val popDegBin11 = popHist.totalBins(11)
+  val popDegBin12 = popHist.totalBins(12); val popDegBin13 = popHist.totalBins(13)
+  val popDegBin14 = popHist.totalBins(14); val popDegBin15 = popHist.totalBins(15)
+  """
+) set (
+  inputs += (
+    medianHomeRange, areaOverlap,
+    spreadingFactor, useThinning, useHotspot, hotspotVariance, aggregationStrength,
+    myseed
+  ),
+  outputs += (
+    // Echo swept inputs (community-level)
+    medianHomeRange, areaOverlap,
+    spreadingFactor, useThinning, useHotspot, hotspotVariance, aggregationStrength,
+    myseed,
+    // Derived context (community-level)
+    numberOfPopulations,
+    // Per-tile-size arrays (expanded to one row per tile size by the hook)
+    avgPopulationsPerTile, nTiles,
+    occupancyRate, avgPopsPerOccupiedTile, emptyTiles,
+    avgSpeciesPerOccupiedTile, maxSpeciesInTile,
+    tileGiniCoefficient, speciesCoOccurrence,
+    // Spatial distribution (community-level, repeated across tile-size rows)
+    totalPopulations, populationsInNetwork, avgPopsPerSpecies,
+    avgSpeciesDiameter, minSpeciesDiameter, maxSpeciesDiameter, speciesCoveringLandscape,
+    avgSpeciesBBoxArea, minSpeciesBBoxArea, maxSpeciesBBoxArea,
+    networkDensity, avgInteractionsPerPop,
+    // Network / degree summary
+    spMeanInDegree, spMeanOutDegree, spConnectance, spWeakComponents,
+    spDegreeP10, spDegreeP25, spDegreeP50, spDegreeP75, spDegreeP90,
+    popMeanInDegree, popMeanOutDegree, popConnectance, popWeakComponents,
+    // Beta / gamma
+    landscapeBetaSR, landscapeBetaIR,
+    // Species-web degree histogram
+    spDegBin0, spDegBin1, spDegBin2, spDegBin3, spDegBin4, spDegBin5, spDegBin6, spDegBin7,
+    spDegBin8, spDegBin9, spDegBin10, spDegBin11, spDegBin12, spDegBin13, spDegBin14, spDegBin15,
+    // Population-web degree histogram
+    popDegBin0, popDegBin1, popDegBin2, popDegBin3, popDegBin4, popDegBin5, popDegBin6, popDegBin7,
+    popDegBin8, popDegBin9, popDegBin10, popDegBin11, popDegBin12, popDegBin13, popDegBin14, popDegBin15
+  ),
+  // Defaults for parameters not swept
+  useThinning         := false,
+  useHotspot          := false,
+  hotspotVariance     := 0.1,
+  aggregationStrength := 0.0,
+  plugins += pluginsOf(
+    econetcons.World,
+    econetcons.ConservationParameters,
+    econetcons.WorldParameters,
+    econetcons.ConservationStrategy,
+    econetcons.DiagnosticMetrics,
+    econetcons.SpatialDiagnostics,
+    econetcons.SimulationMetrics
+  )
+)
+
+// ─── Environments ─────────────────────────────────────────────────────────────
+// SLURM cluster (default; copied from tile_size_sweep.oms):
+val atlas = SLURMEnvironment(
+  "integratedmodelling",
+  "atlas-fdr.sw.ehu.es",
+  workDirectory   = "/scratch/integratedmodelling/animalitos",
+  sharedDirectory = "/scratch/integratedmodelling/.tmp/",
+  modules         = Seq("Apptainer"),
+  partition       = "general",
+  qos             = "regular",
+  nodes           = 3,
+  time            = 1 hour,
+  submittedJobs   = 72,
+)
+
+// Local (uncomment for a quick reduced-grid smoke test):
+// val local = LocalEnvironment(4)
+
+// ─── Experiment: main community-shaping grid (no hotspot) ───────────────────────
+// Start with sample = 20 replicates; bump to 100 on the cluster.
+val replications = Replication(
+  evaluation = communityAuditSim,
+  seed       = myseed,
+  sample     = 20,
+)
+
+DirectSampling(
+  evaluation = replications,
+  // avgPopulationsPerTile is NOT swept here: the task characterizes all tile sizes
+  // (TILE_SIZES = 5, 10, 20) on the same community internally.
+  // Thinning is fixed off and hotspots are disabled for this audit.
+  sampling   =
+    (medianHomeRange in Seq(0.01, 0.02, 0.05)) x
+    (areaOverlap     in Seq(5.0, 20.0, 50.0)) x
+    (spreadingFactor in Seq(0.1, 0.5, 1.0, 2.0)),
+) hook (workDirectory / "community_audit") on atlas

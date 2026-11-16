@@ -1,0 +1,39 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.12.1)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 1 s, completed Oct 9, 2026, 3:17:11 PM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[info] compiling 1 Scala source to /home/diego/git/ecological.network.conservation/target/scala-3.3.3/classes ...
+[info] done compiling
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.WebStructureSweep --seeds 5 --threads 20 --out web_structure_sweep.csv
+[WebStructureSweep] 3600 worlds, 20 threads -> web_structure_sweep.csv
+[WebStructureSweep] 200/3600  85s  ETA 24.1 min  (failed 0)
+[WebStructureSweep] 400/3600  188s  ETA 25.1 min  (failed 0)
+[WebStructureSweep] 600/3600  297s  ETA 24.7 min  (failed 0)
+[WebStructureSweep] 800/3600  403s  ETA 23.5 min  (failed 0)
+[WebStructureSweep] 1000/3600  542s  ETA 23.5 min  (failed 0)
+[WebStructureSweep] 1200/3600  723s  ETA 24.1 min  (failed 0)
+[WebStructureSweep] 1400/3600  873s  ETA 22.9 min  (failed 0)
+[WebStructureSweep] 1600/3600  999s  ETA 20.8 min  (failed 0)
+[WebStructureSweep] 1800/3600  1135s  ETA 18.9 min  (failed 0)
+[WebStructureSweep] 2000/3600  1259s  ETA 16.8 min  (failed 0)
+[WebStructureSweep] 2200/3600  1396s  ETA 14.8 min  (failed 0)
+[WebStructureSweep] 2400/3600  1578s  ETA 13.1 min  (failed 0)
+[WebStructureSweep] 2600/3600  1747s  ETA 11.2 min  (failed 0)
+[WebStructureSweep] 2800/3600  1923s  ETA 9.2 min  (failed 0)
+[WebStructureSweep] 3000/3600  2153s  ETA 7.2 min  (failed 0)
+[warn] In the last 10 seconds, 5.001 (50.9%) were spent in GC. [Heap: 0.11GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[warn] In the last 10 seconds, 5.097 (51.0%) were spent in GC. [Heap: 0.16GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[WebStructureSweep] 3200/3600  2423s  ETA 5.0 min  (failed 0)
+[warn] In the last 10 seconds, 5.003 (50.4%) were spent in GC. [Heap: 0.12GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[warn] In the last 10 seconds, 5.006 (50.3%) were spent in GC. [Heap: 0.11GB free of 1.00GB, max 1.00GB] Consider increasing the JVM heap using `-Xmx` or try a different collector, e.g. `-XX:+UseG1GC`, for better performance.
+[WebStructureSweep] 3400/3600  2687s  ETA 2.6 min  (failed 0)
+[WebStructureSweep] 3600/3600  2949s  ETA 0.0 min  (failed 0)
+[WebStructureSweep] DONE -> web_structure_sweep.csv  (3600 worlds, 0 failed)
+[success] Total time: 2953 s (49:13), completed Oct 9, 2026, 4:06:24 PM
