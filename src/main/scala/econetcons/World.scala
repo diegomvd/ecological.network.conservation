@@ -42,7 +42,23 @@ case class World(
   energyBaseline: Map[Int, Double] = Map.empty,
   // diet-breadth rule (dietBreadthThreshold > 0): prey-species count per population at assembly.
   dietBaseline: Map[Int, Int] = Map.empty,
+  // biomassPyramid: individuals per population, by species id (all populations of a species are
+  // the same size). Empty = one individual per population (every other abundance model).
+  individualsPerPop: Map[Int, Double] = Map.empty,
+  // emergent: individuals in each population, by population id (EnergyFlow).
+  popIndividuals: Map[Int, Double] = Map.empty,
 ):
+
+  /** Individuals in each population of species `speciesId` (1 outside biomassPyramid). */
+  def individualsOf(speciesId: Int): Double = this.individualsPerPop.getOrElse(speciesId, 1.0)
+
+  /** Biomass of population p: individuals × body mass (emergent: its own size; else per species). */
+  /** emergent: how consumers spread demand over prey (WorldParameters.foragingRule). */
+  lazy val diet: EnergyFlow.Diet = EnergyFlow.Diet(this.worldParameters, this.metaWeb)
+
+  def biomassOf(p: Population): Double =
+    if this.popIndividuals.nonEmpty then this.popIndividuals.getOrElse(p.id, 0.0) * p.species.bodySize
+    else individualsOf(p.species.id) * p.species.bodySize
 
   def getSpeciesRichness(): Int =
     this.populations.filter(!_.extinct).map(_.species.id).toSet.size
@@ -144,11 +160,11 @@ case class World(
     (this.copy(populations = newPopulations, populationWeb = newPopulationWeb, managementLandscape = newManagementLandscape), nCascades)
     
   /**
-   * Metabolic energetic cascade (Phase 2). Each population is an individual of its species'
-   * body mass M = species.bodySize. For a predator individual i and prey individual j:
+   * Metabolic energetic cascade (Phase 2). Population i holds n_i individuals (`individualsOf`;
+   * 1 outside biomassPyramid) of its species' body mass M = species.bodySize:
    *
-   *   demand   D_i = M_i^0.75                 (Kleiber metabolic scaling; constant absorbed to 1)
-   *   supply   S_j = ε · M_j                  (biomass energy, linear in mass)
+   *   demand   D_i = n_i · M_i^0.75           (Kleiber metabolic scaling; constant absorbed to 1)
+   *   supply   S_j = ε · n_j · M_j            (biomass energy, linear in mass)
    *   share    each prey j splits S_j EQUALLY among its current predators P_j
    *   survive  predator i lives iff  Σ_{j ∈ prey(i)} S_j / |P_j|  ≥  D_i
    *
@@ -161,6 +177,12 @@ case class World(
    * Phase 0 (outDegree == 0 cleanup) must be run before calling this method.
    */
   def trophicCascades(epsilon: Double): (World, Int) =
+    if World.usesFastCascade(this.worldParameters) then
+      val (removed, nRounds) = World.greedyStarvation(this.populationWeb, epsilon, individualsOf)
+      val newPopulations = this.populations.map(p => if removed.contains(p.id) then p.extinguish else p)
+      val extinctPopulations = newPopulations.collect { case p if p.extinct => (p.id, p.species.id) }
+      val newManagementLandscape = this.managementLandscape.updatePersistentPopulations(extinctPopulations)
+      return (this.copy(populations = newPopulations, populationWeb = this.populationWeb, managementLandscape = newManagementLandscape), nRounds)
 
     @tailrec
     def cascade(
@@ -183,9 +205,9 @@ case class World(
           val allocated = populationWeb.outgoingEdgesOf(p).asScala.foldLeft(0.0) { (acc, e) =>
             val q = populationWeb.getEdgeTarget(e)
             val pc = predatorCount.getOrElse(q.id, 1)
-            acc + (if pc > 0 then epsilon * q.species.bodySize / pc else 0.0)
+            acc + (if pc > 0 then epsilon * individualsOf(q.species.id) * q.species.bodySize / pc else 0.0)
           }
-          val demand = math.pow(p.species.bodySize, 0.75)
+          val demand = individualsOf(p.species.id) * math.pow(p.species.bodySize, 0.75)
           val deficit = demand - allocated
           if deficit > 0.0 then Some((p, deficit)) else None
       }
@@ -208,7 +230,8 @@ case class World(
   // Dispatch helper: the metabolic energetic cascade (epsilon > 0) is the go-forward Phase-2
   // model. Falls back to the legacy diet-breadth / outDegree==0 cleanup when epsilon == 0.
   private[econetcons] def phase2Cascades(): (World, Int) =
-    this.worldParameters.cascadeModel match
+    if this.worldParameters.abundanceModel == "emergent" then this.energyFlowCascades()
+    else this.worldParameters.cascadeModel match
       case "metabolic" =>
         if this.worldParameters.epsilon > 0.0 then
           this.trophicCascades(this.worldParameters.epsilon)
@@ -273,6 +296,22 @@ case class World(
       val extinct = newPopulations.collect { case p if p.extinct => (p.id, p.species.id) }
       val newLandscape = this.managementLandscape.updatePersistentPopulations(extinct)
       (this.copy(populations = newPopulations, populationWeb = newWeb, managementLandscape = newLandscape), nRounds)
+
+  /**
+   * emergent: re-relax the energy flow on the current web with each population capped at its
+   * assembled size (populations can shrink and recover, not outgrow the assembled community) and
+   * remove those falling below minViableIndividuals. Returns the number of removals.
+   */
+  def energyFlowCascades(): (World, Int) =
+    val wp = this.worldParameters
+    val tp = World.trophicPositions(this.metaWeb)
+    val size = (p: Population) => this.popIndividuals.getOrElse(p.id, 0.0)
+    val res = EnergyFlow.relax(this.populationWeb, size, size, wp.transferEfficiency, wp.minViableIndividuals,
+      p => tp(p.species.id), this.rnd, this.diet)
+    val newPopulations = this.populations.map(p => if res.removed.contains(p.id) then p.extinguish else p)
+    val extinct = newPopulations.collect { case p if p.extinct => (p.id, p.species.id) }
+    val newLandscape = this.managementLandscape.updatePersistentPopulations(extinct)
+    (this.copy(populations = newPopulations, managementLandscape = newLandscape, popIndividuals = res.individuals), res.removals)
 
   def extinctions(): (World,Int) =
     // Phase 0: stabilize, Phase 1: primary, Phase 2: cascade (same model for both cascade phases).
@@ -374,6 +413,65 @@ case class World(
 
 object World:
 
+  // The new assembly modes use the incremental greedy cascade; the others keep the original
+  // full-recompute loop so the default output stays bit-identical (ties / rounding may differ).
+  private[econetcons] def usesFastCascade(wp: WorldParameters): Boolean =
+    wp.abundanceModel == "emergent" || wp.abundanceModel == "biomassPyramid"
+
+  /**
+   * Same rule as `trophicCascades` (greedy: remove the consumer population with the largest
+   * deficit n·M^0.75 − Σ ε·n_q·m_q/|P_q|, then rescue its co-predators) but incremental: allocated
+   * supply is kept per population and only the predators sharing the removed population's prey
+   * (and its own predators) are updated, with a lazy max-heap of deficits. Mutates `web`; returns
+   * the removed population ids and the number of rounds.
+   */
+  private[econetcons] def greedyStarvation(
+    web: DefaultDirectedGraph[Population, DefaultEdge], epsilon: Double, individualsOf: Int => Double
+  ): (Set[Int], Int) =
+    def supplyOf(q: Population) = epsilon * individualsOf(q.species.id) * q.species.bodySize
+    def demandOf(p: Population) = individualsOf(p.species.id) * math.pow(p.species.bodySize, 0.75)
+    val alloc = scala.collection.mutable.HashMap.empty[Population, Double]
+    val heap = scala.collection.mutable.PriorityQueue.empty[(Double, Int, Population)](Ordering.by(t => (t._1, -t._2)))
+    def push(p: Population): Unit =
+      val d = demandOf(p) - alloc(p)
+      if d > 0.0 then heap.enqueue((d, p.id, p))
+    web.vertexSet().asScala.foreach { p =>
+      if p.species.trophicLevel != 0 then
+        alloc(p) = web.outgoingEdgesOf(p).asScala.foldLeft(0.0) { (acc, e) =>
+          val q = web.getEdgeTarget(e)
+          acc + supplyOf(q) / web.inDegreeOf(q)
+        }
+        push(p)
+    }
+    val removed = scala.collection.mutable.HashSet.empty[Int]
+    var rounds = 0
+    while heap.nonEmpty do
+      val (d, _, p) = heap.dequeue()
+      // stale entry: already removed, or its deficit changed since it was queued
+      if alloc.contains(p) && d == demandOf(p) - alloc(p) then
+        // its prey lose one predator: the remaining co-predators get a bigger share
+        web.outgoingEdgesOf(p).asScala.toSeq.foreach { e =>
+          val q = web.getEdgeTarget(e)
+          val pc = web.inDegreeOf(q)
+          if pc > 1 then
+            val gain = supplyOf(q) / (pc - 1) - supplyOf(q) / pc
+            web.incomingEdgesOf(q).asScala.toSeq.foreach { e2 =>
+              val r = web.getEdgeSource(e2)
+              if r != p && alloc.contains(r) then { alloc(r) += gain; push(r) }
+            }
+        }
+        // its own predators lose it as prey
+        val pc = web.inDegreeOf(p)
+        web.incomingEdgesOf(p).asScala.toSeq.foreach { e =>
+          val r = web.getEdgeSource(e)
+          if alloc.contains(r) then { alloc(r) -= supplyOf(p) / pc; push(r) }
+        }
+        alloc.remove(p)
+        web.removeVertex(p)
+        removed += p.id
+        rounds += 1
+    (removed.toSet, rounds)
+
   /** Biomass carried by one population of a species of body mass m: Damuth density m^-0.75 × m. */
   private[econetcons] def populationBiomass(s: Species): Double = math.pow(s.bodySize, 0.25)
 
@@ -454,41 +552,224 @@ object World:
         n
       case other => throw new IllegalArgumentException(s"unknown abundanceModel '$other'")
 
+  /**
+   * biomassPyramid: species biomass B_s = B_total · TE^(TP_s − 1) / n(TP_s), normalized so that
+   * Σ_s B_s = totalBiomass. TP is the Levine trophic position on the metaweb; n(TP_s) =
+   * Σ_k exp(−(TP_s − TP_k)² / 2h²) is the Gaussian-kernel count of species near TP_s (h =
+   * tpBandwidth, n ≥ 1), so the biomass summed around any trophic position follows TE^(TP−1)
+   * and species at the same position share it. densityCorrection = false sets n ≡ 1.
+   */
+  private[econetcons] def speciesBiomass(metaWeb: DefaultDirectedGraph[Species, DefaultEdge], wp: WorldParameters): Map[Int, Double] =
+    val tp = trophicPositions(metaWeb)
+    val ids = metaWeb.vertexSet().asScala.toVector.map(_.id)
+    val h2 = 2.0 * wp.tpBandwidth * wp.tpBandwidth
+    def density(x: Double): Double =
+      if !wp.densityCorrection then 1.0
+      else ids.map(k => math.exp(-math.pow(x - tp(k), 2) / h2)).sum
+    val raw = ids.map(s => s -> math.pow(wp.transferEfficiency, tp(s) - 1.0) / density(tp(s))).toMap
+    val total = raw.values.sum
+    raw.map((s, b) => s -> wp.totalBiomass * b / total)
+
+  /** biomassPyramid split of one species: (populations, individuals per population). */
+  final case class SpeciesAllocation(biomass: Double, individuals: Double, nPopulations: Int, individualsPerPop: Double)
+
+  /**
+   * N_s = B_s / m_s individuals in floor(N_s / n_pop) equal populations (so each holds ≥ n_pop).
+   * N_s < n_pop: one population of N_s under smallSpeciesRule "single", none under "drop".
+   */
+  private[econetcons] def biomassAllocation(metaWeb: DefaultDirectedGraph[Species, DefaultEdge], wp: WorldParameters): Map[Int, SpeciesAllocation] =
+    require(wp.individualsPerPopulation >= 1, s"individualsPerPopulation must be >= 1, got ${wp.individualsPerPopulation}")
+    val biomass = speciesBiomass(metaWeb, wp)
+    metaWeb.vertexSet().asScala.toSeq.map { s =>
+      val b = biomass(s.id)
+      val n = b / s.bodySize
+      val k = math.floor(n / wp.individualsPerPopulation).toInt
+      val alloc =
+        if k >= 1 then SpeciesAllocation(b, n, k, n / k)
+        else wp.smallSpeciesRule match
+          case "single" => SpeciesAllocation(b, n, 1, n)
+          case "drop"   => SpeciesAllocation(b, n, 0, 0.0)
+          case other    => throw new IllegalArgumentException(s"unknown smallSpeciesRule '$other'")
+      s.id -> alloc
+    }.toMap
+
+  /**
+   * totalBiomass at which ~`targetPopulations` populations are placed on this metaweb
+   * (Σ_s N_s / n_pop, ignoring flooring and the small-species rule). Used for calibration.
+   */
+  private[econetcons] def totalBiomassForPopulations(
+    metaWeb: DefaultDirectedGraph[Species, DefaultEdge], wp: WorldParameters, targetPopulations: Int
+  ): Double =
+    val unit = speciesBiomass(metaWeb, wp.copy(totalBiomass = 1.0))
+    val popsPerUnit = metaWeb.vertexSet().asScala.toSeq.map(s => unit(s.id) / s.bodySize).sum / wp.individualsPerPopulation
+    targetPopulations / popsPerUnit
+
+  /**
+   * emergent: range fraction ρ_s = rangeFraction · LogNormal(0, rangeFractionSigma) · (M_s/M_median)^rangeMassExponent
+   * (≤ 1) and seeds k_s ~ Poisson(ρ_s / (π r_s²)), at least 1 (a range holds at least one home range).
+   * Same rule for basal and consumer species. Draws in species-id order.
+   */
+  private[econetcons] def emergentSeedCounts(metaWeb: DefaultDirectedGraph[Species, DefaultEdge], wp: WorldParameters,
+      rnd: Random): Map[Int, Int] =
+    val species = metaWeb.vertexSet().asScala.toSeq.sortBy(_.id)
+    val masses = species.map(_.bodySize).sorted
+    val mMedian = masses(masses.size / 2)
+    val poissonRng = new org.apache.commons.math3.random.Well19937c(rnd.nextLong())
+    species.map { s =>
+      val rho = math.min(1.0, wp.rangeFraction * math.exp(wp.rangeFractionSigma * rnd.nextGaussian()) *
+        math.pow(s.bodySize / mMedian, wp.rangeMassExponent))
+      val mean = rho / (math.Pi * s.homeRange * s.homeRange)
+      val k = new org.apache.commons.math3.distribution.PoissonDistribution(poissonRng, mean,
+        org.apache.commons.math3.distribution.PoissonDistribution.DEFAULT_EPSILON,
+        org.apache.commons.math3.distribution.PoissonDistribution.DEFAULT_MAX_ITERATIONS).sample()
+      s.id -> math.max(1, k)
+    }.toMap
+
+  /** emergent: individuals in a basal population (B0 / nBasal points, in units of body mass, ≥ 1). */
+  private[econetcons] def basalIndividuals(wp: WorldParameters, nBasal: Int)(p: Population): Double =
+    math.max(1.0, math.floor(wp.basalBiomass / math.max(1, nBasal) / p.species.bodySize))
+
+  /** emergent: assemble in place (mutates `web`); returns individuals per surviving population. */
+  private[econetcons] def assembleEnergyFlow(web: DefaultDirectedGraph[Population, DefaultEdge],
+      metaWeb: DefaultDirectedGraph[Species, DefaultEdge], wp: WorldParameters, rnd: Random): EnergyFlow.Result =
+    val tp = trophicPositions(metaWeb)
+    val nBasal = web.vertexSet().asScala.count(_.species.trophicLevel == 0)
+    val caps = EnergyFlow.seedCaps(web, tp, basalIndividuals(wp, nBasal), wp.transferEfficiency, wp.minViableIndividuals)
+    EnergyFlow.relax(web, p => caps(p.id), p => caps(p.id), wp.transferEfficiency, wp.minViableIndividuals,
+      p => tp(p.species.id), rnd, EnergyFlow.Diet(wp, metaWeb))
+
+  // Test-only hook: build metaweb only (consumes the same RNG draws World.apply starts with).
+  private[econetcons] def buildMetaWebForTest(wp: WorldParameters, rnd: Random): DefaultDirectedGraph[Species, DefaultEdge] =
+    generateMetaWeb(wp.numberOfSpecies, wp.connectanceMetaWeb, wp.medianHomeRange, wp.bodySizeSigma, rnd, wp.homeRangeExponent)
+
   // Test-only hook: build metaweb + spatially-arranged populations (pre-web, pre-cascade).
   private[econetcons] def buildPopsAndMetaForTest(
     wp: WorldParameters, rnd: Random
   ): (Seq[Population], DefaultDirectedGraph[Species, DefaultEdge]) =
-    val metaWeb = generateMetaWeb(wp.numberOfSpecies, wp.connectanceMetaWeb, wp.medianHomeRange, wp.bodySizeSigma, rnd)
-    val pops = generatePopulations(metaWeb, wp.nPopulations, rnd, wp)
+    val (pops, metaWeb, _) = buildPopsMetaAndSizesForTest(wp, rnd)
     (pops, metaWeb)
+
+  // As buildPopsAndMetaForTest, plus the individuals-per-population map (biomassPyramid).
+  private[econetcons] def buildPopsMetaAndSizesForTest(
+    wp: WorldParameters, rnd: Random
+  ): (Seq[Population], DefaultDirectedGraph[Species, DefaultEdge], Map[Int, Double]) =
+    val metaWeb = generateMetaWeb(wp.numberOfSpecies, wp.connectanceMetaWeb, wp.medianHomeRange, wp.bodySizeSigma, rnd, wp.homeRangeExponent)
+    val (pops, sizes) = generatePopulations(metaWeb, wp.nPopulations, rnd, wp)
+    (pops, metaWeb, sizes)
+
+  /**
+   * The management-independent part of World.apply: metaweb, populations, population web and (emergent)
+   * energy-flow assembly, plus the RNG state at that point. `fromAssembly` turns it into exactly the
+   * World that World.apply would build for any WorldParameters differing only in management / pressure
+   * parameters (tile size, extinction probability, noise) and any ConservationParameters, so one
+   * assembly can be reused across those axes.
+   */
+  final class Assembly private[World] (
+    val worldParameters: WorldParameters,
+    val metaWeb: DefaultDirectedGraph[Species, DefaultEdge],
+    val populations: Seq[Population],
+    web: DefaultDirectedGraph[Population, DefaultEdge],
+    val individualsPerPop: Map[Int, Double],
+    val popIndividuals: Map[Int, Double],
+    rngState: Array[Byte],
+  ):
+    /** Fresh copy of the assembled population web (same vertex and edge order). */
+    def populationWeb: DefaultDirectedGraph[Population, DefaultEdge] = copyGraph(web)
+    /** The RNG exactly as World.apply holds it right after assembly. */
+    def rng: Random = new Random(deserializeRng(rngState))
+    /** Assembled populations (vertices of the population web). */
+    def assembledSize: Int = web.vertexSet().size()
+
+  /** Parameters that cannot change between an assembly and the worlds built from it. */
+  private def assemblyKey(wp: WorldParameters): WorldParameters =
+    wp.copy(avgPopulationsPerTile = 1, tileSizeInHomeRanges = 0.0, extinctionProbabilityUnprotected = 0.0,
+      observationNoise = 0.0, falsePositiveRate = 0.0)
+
+  private def copyGraph(g: DefaultDirectedGraph[Population, DefaultEdge]): DefaultDirectedGraph[Population, DefaultEdge] =
+    val c = new DefaultDirectedGraph[Population, DefaultEdge](classOf[DefaultEdge])
+    g.vertexSet().asScala.foreach(c.addVertex)
+    g.edgeSet().asScala.foreach(e => c.addEdge(g.getEdgeSource(e), g.getEdgeTarget(e)))
+    c
+
+  private def serializeRng(r: Random): Array[Byte] =
+    val bos = new java.io.ByteArrayOutputStream()
+    val oos = new java.io.ObjectOutputStream(bos)
+    oos.writeObject(r.self); oos.close()
+    bos.toByteArray
+
+  private def deserializeRng(bytes: Array[Byte]): java.util.Random =
+    new java.io.ObjectInputStream(new java.io.ByteArrayInputStream(bytes)).readObject().asInstanceOf[java.util.Random]
+
+  def assemble(worldParameters: WorldParameters, rnd: Random): Assembly =
+    val (metaWeb, populations, populationWeb, individualsPerPop, popIndividuals) = assembleInPlace(worldParameters, rnd)
+    new Assembly(worldParameters, metaWeb, populations, populationWeb, individualsPerPop, popIndividuals, serializeRng(rnd))
+
+  /** The World that World.apply(wp, cp, new Random(seed)) builds, from an assembly of the same seed. */
+  def fromAssembly(a: Assembly, worldParameters: WorldParameters, conservationParameters: ConservationParameters): World =
+    require(assemblyKey(a.worldParameters) == assemblyKey(worldParameters),
+      "fromAssembly: WorldParameters differ from the assembly's in assembly-relevant fields")
+    finish(worldParameters, conservationParameters, a.rng, a.metaWeb, a.populations, a.populationWeb,
+      a.individualsPerPop, a.popIndividuals)
 
   def apply(
     worldParameters: WorldParameters,
     conservationParameters: ConservationParameters,
     rnd: Random
   ): World =
+    val (metaWeb, populations, populationWeb, individualsPerPop, popIndividuals) = assembleInPlace(worldParameters, rnd)
+    finish(worldParameters, conservationParameters, rnd, metaWeb, populations, populationWeb, individualsPerPop, popIndividuals)
+
+  private def assembleInPlace(worldParameters: WorldParameters, rnd: Random): (DefaultDirectedGraph[Species, DefaultEdge],
+      Seq[Population], DefaultDirectedGraph[Population, DefaultEdge], Map[Int, Double], Map[Int, Double]) =
 
     val metaWeb = generateMetaWeb(
       worldParameters.numberOfSpecies,
       worldParameters.connectanceMetaWeb,
       worldParameters.medianHomeRange,
       worldParameters.bodySizeSigma,
-      rnd
+      rnd,
+      worldParameters.homeRangeExponent
     )
 
-    // Population count is a direct parameter (the density knob); management-grid resolution
-    // is derived from it via the desired average populations per tile.
-    val numberOfPopulations = worldParameters.nPopulations
-
-    val nTiles = (numberOfPopulations.toDouble / worldParameters.avgPopulationsPerTile.toDouble).toInt
-
-    val landscapeGrid = SquareGrid.fromArea(nTiles)
-
+    // Population count is a direct parameter (the density knob), except under biomassPyramid
+    // where it is an outcome of totalBiomass; management-grid resolution is derived from the
+    // placed count via the desired average populations per tile.
    // println("Generating populations.")
-    val populations = generatePopulations(metaWeb, numberOfPopulations, rnd, worldParameters)
+    val (populations, individualsPerPop) =
+      generatePopulations(metaWeb, worldParameters.nPopulations, rnd, worldParameters)
 
     //println("Generating interaction network.")
     val populationWeb = PopulationWebGenerator.generatePopulationWeb(populations, metaWeb)
+
+    // emergent: let the energy flow carve the viable community out of the seeded one before the
+    // management grid is laid down, so tiles are sized on the assembled populations.
+    val emergent = worldParameters.abundanceModel == "emergent"
+    // emergent: basal points are the energy input and stay whether or not a consumer reaches them.
+    if emergent then populations.iterator.filter(_.species.trophicLevel == 0).foreach(populationWeb.addVertex)
+    val popIndividuals: Map[Int, Double] =
+      if emergent then assembleEnergyFlow(populationWeb, metaWeb, worldParameters, rnd).individuals else Map.empty
+    (metaWeb, populations, populationWeb, individualsPerPop, popIndividuals)
+
+  private def finish(
+    worldParameters: WorldParameters,
+    conservationParameters: ConservationParameters,
+    rnd: Random,
+    metaWeb: DefaultDirectedGraph[Species, DefaultEdge],
+    populations: Seq[Population],
+    populationWeb: DefaultDirectedGraph[Population, DefaultEdge],
+    individualsPerPop: Map[Int, Double],
+    popIndividuals: Map[Int, Double],
+  ): World =
+    val emergent = worldParameters.abundanceModel == "emergent"
+    val numberOfPopulations =
+      if worldParameters.abundanceModel == "biomassPyramid" then populations.size
+      else if emergent then populationWeb.vertexSet().size()
+      else worldParameters.nPopulations
+
+    val nTiles = math.max(1, (numberOfPopulations.toDouble / worldParameters.avgPopulationsPerTile.toDouble).toInt)
+
+    val landscapeGrid =
+      if worldParameters.tileSizeInHomeRanges > 0 then SquareGrid(worldParameters.tilesPerSide) else SquareGrid.fromArea(nTiles)
 
     // TODO: check if this is true  
     // Update populations given that the non interacting ones are removed from the network
@@ -516,7 +797,8 @@ object World:
       else
         selectedLandscape
     //println("Initializing world.")
-    val unstableWorld = new World(populationsInit, managementLandscape, metaWeb, populationWeb, worldParameters, conservationParameters, rnd)
+    val unstableWorld = new World(populationsInit, managementLandscape, metaWeb, populationWeb, worldParameters, conservationParameters, rnd,
+      individualsPerPop = individualsPerPop, popIndividuals = popIndividuals)
 
     val (stableWorld,nCascades) = unstableWorld.phase2Cascades()
 
@@ -536,7 +818,8 @@ object World:
     else stableWorld
 
 
-  private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, medianHomeRange: Double, bodySizeSigma: Double, rnd: Random):
+  private def generateMetaWeb(numberOfSpecies: Int, connectance: Double, medianHomeRange: Double, bodySizeSigma: Double, rnd: Random,
+      homeRangeExponent: Double = 0.75):
   DefaultDirectedGraph[Species, DefaultEdge]  =
 
     // Seed a Commons-Math RNG deterministically from the threaded `rnd` so metaweb
@@ -682,7 +965,7 @@ object World:
     // First pass: create species with raw (relative) homeRange values
     val rawSpecies = rawMetaWeb.vertexSet().asScala.toSeq.map { vertex =>
       val trophicLevel = Species.calculateTrophicLevel(vertex, rawMetaWeb)
-      Species(vertex._1, vertex._2, trophicLevel, rnd)
+      Species(vertex._1, vertex._2, trophicLevel, rnd, homeRangeExponent)
     }
 
     // HOME RANGE SCALING - convert from relative to absolute values
@@ -726,10 +1009,16 @@ object World:
     numberOfPopulations: Int,
     rnd: Random,
     worldParameters: WorldParameters
-  ): Seq[Population] = {
+  ): (Seq[Population], Map[Int, Double]) = {
+    val biomassMode = worldParameters.abundanceModel == "biomassPyramid"
+    val biomassAlloc: Map[Int, SpeciesAllocation] =
+      if biomassMode then biomassAllocation(metaWeb, worldParameters) else Map.empty
+    val emergentSeeds: Map[Int, Int] =
+      if worldParameters.abundanceModel == "emergent" then emergentSeedCounts(metaWeb, worldParameters, rnd) else Map.empty
     // Relative weight per species (WorldParameters.abundanceModel; "damuth" = s.abundance).
-    val weight: Map[Int, Double] = allocationWeights(metaWeb, worldParameters)
-    val abundancesSum: Double = metaWeb.vertexSet().asScala.toSeq.map(s => weight(s.id)).sum
+    val weight: Map[Int, Double] =
+      if biomassMode || emergentSeeds.nonEmpty then Map.empty else allocationWeights(metaWeb, worldParameters)
+    val abundancesSum: Double = metaWeb.vertexSet().asScala.toSeq.map(s => weight.getOrElse(s.id, 0.0)).sum
     val conversionFactor: Double = numberOfPopulations / abundancesSum
 
     // Total count is apportioned across species by their allocation weight.
@@ -740,7 +1029,10 @@ object World:
     metaWeb.vertexSet().asScala.toSeq.foreach { species =>
 
       // Calculate number of populations for this species
-      val speciesAbundance = math.max(1, (weight(species.id) * conversionFactor).toInt)
+      val speciesAbundance =
+        if biomassMode then biomassAlloc(species.id).nPopulations
+        else if emergentSeeds.nonEmpty then emergentSeeds(species.id)
+        else math.max(1, (weight(species.id) * conversionFactor).toInt)
 
       // Create template populations with placeholder coordinates
       val templatePopulations = (0 until speciesAbundance).map { i =>
@@ -763,7 +1055,9 @@ object World:
       allPopulations ++= spatiallyArrangedPopulations
       currentId += speciesAbundance
     }
-    allPopulations.toSeq
+    val individualsPerPop: Map[Int, Double] =
+      biomassAlloc.collect { case (id, a) if a.nPopulations > 0 => id -> a.individualsPerPop }
+    (allPopulations.toSeq, individualsPerPop)
   }
     
 end World

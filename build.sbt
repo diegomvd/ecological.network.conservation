@@ -14,6 +14,19 @@ lazy val root = (project in file("."))
     libraryDependencies += "org.apache.commons" % "commons-math3" % "3.6.1",
   )
 
+// ── Fat JAR for headless cluster execution (Saltelli runner on Drago CSIC) ──
+// `sbt assembly` produces a single self-contained JAR with all deps + the Scala
+// library, so the SLURM job array only needs a JRE + this one file on the cluster.
+ThisBuild / assemblyMergeStrategy := {
+  case PathList("module-info.class")                    => MergeStrategy.discard
+  case p if p.endsWith("/module-info.class")            => MergeStrategy.discard
+  case PathList("META-INF", _ @ _*)                     => MergeStrategy.discard
+  case "reference.conf"                                 => MergeStrategy.concat
+  case _                                                => MergeStrategy.first
+}
+assembly / mainClass := Some("econetcons.SaltelliRunner")
+assembly / assemblyJarName := "econetcons-saltelli.jar"
+
 enablePlugins(SbtOsgi)
 
 OsgiKeys.exportPackage := Seq("econetcons.*")

@@ -22,6 +22,10 @@ case class WorldParameters(
   // Average populations per management tile. Sets ONLY the management-grid granularity:
   // nTiles = nPopulations / avgPopulationsPerTile. Does not affect population density.
   avgPopulationsPerTile: Int = 10,
+  // Management scale: tile side in units of the median home-range DIAMETER (2 · medianHomeRange). The grid
+  // has n = round(1 / (tileSizeInHomeRanges · 2 · medianHomeRange)) ≥ 1 tiles per side (realized side 1/n),
+  // whatever the population count. 0 = derive the grid from avgPopulationsPerTile (historic).
+  tileSizeInHomeRanges: Double = 0.0,
   extinctionProbabilityUnprotected: Double = 0.5, // primary extinction probability for unprotected tiles
   dietBreadthThreshold: Double = 0.0,             // fraction of prey species lost that triggers cascade (0.0 = classic outDegree==0 rule)
   preyPerPredator: Double = 0.0,                  // DEPRECATED knob for the old unit-weighted load/supply model; kept only for back-compat callers. Prefer `epsilon`.
@@ -51,8 +55,55 @@ case class WorldParameters(
   // "energyBalance"      : basal count ∝ m^-0.75; consumer counts solved so metaweb prey can feed
   //                        them under the metabolic rule (ε·m_prey shared among predator species
   //                        vs M^0.75 demand)
+  // "biomassPyramid"     : total biomass (not population count) is the size knob. Species biomass
+  //                        B_s ∝ TE^(TP_s-1) / n(TP_s) (n = Gaussian kernel count of species near
+  //                        TP_s, bandwidth tpBandwidth; densityCorrection=false drops it), summed
+  //                        to totalBiomass. N_s = B_s / m_s individuals, split into populations of
+  //                        individualsPerPopulation; the number of populations is an outcome and
+  //                        nPopulations is ignored (tiles = placed populations / avgPopulationsPerTile).
+  // "emergent"           : the pyramid emerges from energy flow (EnergyFlow). Every species s gets a range
+  //                        fraction ρ_s (rangeFraction, rangeFractionSigma, rangeMassExponent) and is seeded
+  //                        with k_s ~ Poisson(ρ_s / (π r_s²)) ≥ 1 populations (its range filled with home
+  //                        ranges), placed by the Matérn process. Total basal biomass basalBiomass (B0) is split
+  //                        evenly over all basal points (⌊(B0/N_basal)/m⌋ individuals each) and is the fixed
+  //                        energy input; basal points are kept even with no consumer in reach. Consumer seeds start at the individuals
+  //                        its reachable lower-level prey could sustain alone; populations shrink to what
+  //                        their share of prey supply (TE = transferEfficiency, split ∝ demand) sustains
+  //                        and die below minViableIndividuals. Done BEFORE the management grid is built
+  //                        (tiles = assembled populations / avgPopulationsPerTile). epsilon is not used.
   abundanceModel: String = "damuth",
   transferEfficiency: Double = 0.1,
+
+  // --- biomassPyramid-only parameters ---
+  totalBiomass: Double = 1.0e5,
+  // n_pop: individuals per population. A species gets floor(N_s / n_pop) populations, each holding
+  // N_s / floor(N_s / n_pop) individuals (the remainder is spread evenly, so all are ≥ n_pop).
+  individualsPerPopulation: Int = 10,
+  // Species with N_s < n_pop: "single" = one population of N_s individuals; "drop" = not placed.
+  smallSpeciesRule: String = "single",
+  densityCorrection: Boolean = true,
+  tpBandwidth: Double = 0.5,
+  // --- emergent-only parameters ---
+  // Range fraction of species s: ρ_s = rangeFraction · LogNormal(0, rangeFractionSigma) · (M_s / M_median)^rangeMassExponent,
+  // capped at 1: the share of the landscape its range covers. Seeds k_s ~ Poisson(ρ_s / (π r_s²)), at least 1.
+  rangeFraction: Double = 0.03,
+  rangeFractionSigma: Double = 1.0,
+  rangeMassExponent: Double = 0.0,
+  // B0: total basal biomass (the system's energy input), split evenly over all basal points.
+  basalBiomass: Double = 5.0e6,
+  minViableIndividuals: Double = 10.0,
+  // emergent: how a consumer spreads its demand over its prey (EnergyFlow.Diet): "supply" = ∝ prey supply;
+  // "equal" = equally over prey species in reach; "niche" = over prey species by niche-model preference.
+  foragingRule: String = "supply",
+  // Home-range radius r ∝ M^homeRangeExponent (rescaled so the median is medianHomeRange). 0.75 is the
+  // historic value (home-range AREA ∝ M^1.5); 0.5 (default since 2026-10-14) gives area ∝ M, closer to
+  // empirical scaling.
+  homeRangeExponent: Double = 0.5,
+
+  // Spatial placement of a species' populations: "matern" (Utils.generateMaternProcess),
+  // "uniform" (each population at an independent uniform point), or "auto" = uniform under
+  // biomassPyramid, matern otherwise (emergent included: ranges are sections of the landscape).
+  placement: String = "auto",
 
   // --- Cascade rule (Phase-2 secondary extinctions, also used for stabilization at assembly) ---
   // "metabolic"       : legacy dispatch — energetic cascade if epsilon > 0, else diet-breadth rule
@@ -64,6 +115,13 @@ case class WorldParameters(
   cascadeModel: String = "metabolic",
   energyTolerance: Double = 1.0,
 ):
+
+  /** Tiles per side of the management grid when tileSizeInHomeRanges > 0. */
+  def tilesPerSide: Int = math.max(1, math.round(1.0 / (tileSizeInHomeRanges * 2.0 * medianHomeRange)).toInt)
+
+  def resolvedPlacement: String = placement match
+    case "auto" => if abundanceModel == "biomassPyramid" then "uniform" else "matern"
+    case p => p
 
   def extinctionProbability(status: ProtectionStatus): Double =
     status match

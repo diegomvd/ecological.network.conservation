@@ -37,8 +37,11 @@ build/
 ### Mac OS ###
 .DS_Store
 
-<<<<<<< HEAD
+### Scala tooling ###
 .bloop/
-=======
 .metals/
->>>>>>> master
+.bsp/
+.idea/
+
+### Python ###
+__pycache__/

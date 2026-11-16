@@ -25,16 +25,20 @@ object Population:
 
     val targetPopulations = populationSeq.size
 
-    // Matérn cluster process: Poisson number of patches per species, populations scattered
-    // multinomially across them, each patch a home-range-sized disk (see Utils.generateMaternProcess).
-    val finalCoordinates: Seq[Coordinate] =
-      Utils.generateMaternProcess(
-        targetPopulations,
-        species.homeRange,
-        worldParameters.meanPatchesPerSpecies,
-        worldParameters.patchPackingFactor,
-        rnd
-      )
+    val finalCoordinates: Seq[Coordinate] = worldParameters.resolvedPlacement match
+      // Complete spatial randomness: every population at an independent uniform point.
+      case "uniform" => Seq.fill(targetPopulations)(Utils.randomPoint(rnd))
+      // Matérn cluster process: Poisson number of patches per species, populations scattered
+      // multinomially across them, each patch a home-range-sized disk (see Utils.generateMaternProcess).
+      case "matern" =>
+        Utils.generateMaternProcess(
+          targetPopulations,
+          species.homeRange,
+          worldParameters.meanPatchesPerSpecies,
+          worldParameters.patchPackingFactor,
+          rnd
+        )
+      case other => throw new IllegalArgumentException(s"unknown placement '$other'")
 
     finalCoordinates.zip(populationSeq).map { case (coordinate, population) =>
       population.copy(coordinates = coordinate, extinct = false)

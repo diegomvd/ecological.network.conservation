@@ -299,6 +299,22 @@ object Observables:
     transferEfficiency: Double = 0.1,
     cascadeModel: String = "metabolic",
     energyTolerance: Double = 1.0,
+    // abundanceModel = "biomassPyramid" (nPopulations is then ignored; see WorldParameters).
+    totalBiomass: Double = 1.0e5,
+    individualsPerPopulation: Int = 10,
+    smallSpeciesRule: String = "single",
+    densityCorrection: Boolean = true,
+    tpBandwidth: Double = 0.5,
+    placement: String = "auto",
+    // abundanceModel = "emergent"
+    rangeFraction: Double = 0.03,
+    rangeFractionSigma: Double = 1.0,
+    rangeMassExponent: Double = 0.0,
+    basalBiomass: Double = 5.0e6,
+    minViableIndividuals: Double = 10.0,
+    homeRangeExponent: Double = 0.5,
+    tileSizeInHomeRanges: Double = 0.0,
+    foragingRule: String = "supply",
   ): Map[String, Double] =
     val wp = WorldParameters(
       numberOfSpecies = numberOfSpecies,
@@ -315,11 +331,41 @@ object Observables:
       transferEfficiency = transferEfficiency,
       cascadeModel = cascadeModel,
       energyTolerance = energyTolerance,
+      totalBiomass = totalBiomass,
+      individualsPerPopulation = individualsPerPopulation,
+      smallSpeciesRule = smallSpeciesRule,
+      densityCorrection = densityCorrection,
+      tpBandwidth = tpBandwidth,
+      placement = placement,
+      rangeFraction = rangeFraction,
+      rangeFractionSigma = rangeFractionSigma,
+      rangeMassExponent = rangeMassExponent,
+      basalBiomass = basalBiomass,
+      minViableIndividuals = minViableIndividuals,
+      homeRangeExponent = homeRangeExponent,
+      tileSizeInHomeRanges = tileSizeInHomeRanges,
+      foragingRule = foragingRule,
     )
+    runWith(wp, fractionProtected, seed, strategies)
+
+  /**
+   * As `run`, from explicit WorldParameters. With `assembly` (World.assemble(wp', new Random(seed)) for a wp'
+   * differing from `wp` only in management / pressure fields), the base world is rebuilt from it instead
+   * of re-assembled: the result is identical to the run without it, and much cheaper.
+   */
+  def runWith(
+    wp: WorldParameters,
+    fractionProtected: Double,
+    seed: Long,
+    strategies: Seq[StrategySpec] = defaultStrategies,
+    assembly: Option[World.Assembly] = None,
+  ): Map[String, Double] =
     // Shared base world (protection plan NOT yet applied — applyProtectionPlan runs inside
     // runStrategy on a copy of this landscape, so all strategies start from the same world).
     val baseCp = ConservationParameters(fractionProtected = 0.0, strategy = Some(ConservationStrategy.SpeciesRichness))
-    val baseWorld = World(wp, baseCp, new Random(seed))
+    val baseWorld = assembly match
+      case Some(a) => World.fromAssembly(a, wp, baseCp)
+      case None    => World(wp, baseCp, new Random(seed))
 
     val allSpecies = baseWorld.populations.map(_.species).distinct
     val bodyQ = bodyQuartiles(allSpecies)
