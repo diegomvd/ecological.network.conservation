@@ -1,0 +1,19 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.12.1)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 1 s, completed Oct 13, 2026, 10:32:55 PM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.AssemblyDiagnostic --grid emergent --assemblyOnly true --seeds 3 --threads 20 --basal 5000 --seedPoints 3,10,30,100 --out emergent_biomass_k.csv
+[AssemblyDiagnostic] 72 worlds, 20 threads -> emergent_biomass_k.csv
+[AssemblyDiagnostic] 20/72  7s  ETA 0.3 min  (failed 0)
+[AssemblyDiagnostic] 40/72  13s  ETA 0.2 min  (failed 0)
+[AssemblyDiagnostic] 60/72  49s  ETA 0.2 min  (failed 0)
+[AssemblyDiagnostic] 72/72  229s  ETA 0.0 min  (failed 0)
+[AssemblyDiagnostic] DONE -> emergent_biomass_k.csv  (72 worlds, 0 failed)
+[success] Total time: 232 s (03:52), completed Oct 13, 2026, 10:36:47 PM

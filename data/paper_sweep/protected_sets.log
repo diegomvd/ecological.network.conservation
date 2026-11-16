@@ -1,0 +1,30 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.12.1)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 1 s, completed Oct 15, 2026, 10:34:26 AM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.ProtectedSetExport --seeds 50 --threads 20 --verify true
+[ProtectedSetExport] 150 assemblies, C=0.05,0.1,0.2 t=0.25,2.0 frac=0.15 pExt=0.8 verify=true -> data/paper_sweep/protected_sets.csv.gz
+[ProtectedSetExport] 10/150 (failed 0)
+[ProtectedSetExport] 20/150 (failed 0)
+[ProtectedSetExport] 30/150 (failed 0)
+[ProtectedSetExport] 40/150 (failed 0)
+[ProtectedSetExport] 50/150 (failed 0)
+[ProtectedSetExport] 60/150 (failed 0)
+[ProtectedSetExport] 70/150 (failed 0)
+[ProtectedSetExport] 80/150 (failed 0)
+[ProtectedSetExport] 90/150 (failed 0)
+[ProtectedSetExport] 100/150 (failed 0)
+[ProtectedSetExport] 110/150 (failed 0)
+[ProtectedSetExport] 120/150 (failed 0)
+[ProtectedSetExport] 130/150 (failed 0)
+[ProtectedSetExport] 140/150 (failed 0)
+[ProtectedSetExport] 150/150 (failed 0)
+[ProtectedSetExport] DONE -> data/paper_sweep/protected_sets.csv.gz (150 assemblies, 0 failed)
+[success] Total time: 291 s (04:51), completed Oct 15, 2026, 10:39:17 AM

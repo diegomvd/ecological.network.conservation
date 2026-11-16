@@ -1,0 +1,25 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.12.1)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 1 s, completed Oct 13, 2026, 11:13:23 PM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.AssemblyDiagnostic --grid emergent --seeds 3 --threads 20 --rho 0.01,0.03,0.1 --rhoSigma 0.5,1 --hrExp 0.75,0.5 --out emergent_range.csv
+[AssemblyDiagnostic] 192 worlds, 20 threads -> emergent_range.csv
+[AssemblyDiagnostic] 20/192  13s  ETA 1.9 min  (failed 0)
+[AssemblyDiagnostic] 40/192  27s  ETA 1.7 min  (failed 0)
+[AssemblyDiagnostic] 60/192  43s  ETA 1.6 min  (failed 0)
+[AssemblyDiagnostic] 80/192  88s  ETA 2.0 min  (failed 0)
+[AssemblyDiagnostic] 100/192  372s  ETA 5.7 min  (failed 0)
+[AssemblyDiagnostic] 120/192  455s  ETA 4.6 min  (failed 0)
+[AssemblyDiagnostic] 140/192  541s  ETA 3.4 min  (failed 0)
+[AssemblyDiagnostic] 160/192  884s  ETA 2.9 min  (failed 0)
+[AssemblyDiagnostic] 180/192  1428s  ETA 1.6 min  (failed 0)
+[AssemblyDiagnostic] 192/192  2195s  ETA 0.0 min  (failed 0)
+[AssemblyDiagnostic] DONE -> emergent_range.csv  (192 worlds, 0 failed)
+[success] Total time: 2197 s (36:37), completed Oct 13, 2026, 11:50:00 PM

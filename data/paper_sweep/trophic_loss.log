@@ -1,0 +1,30 @@
+[info] welcome to sbt 1.10.5 (Ubuntu Java 21.0.12.1)
+[info] loading global plugins from /home/diego/.sbt/1.0/plugins
+[info] loading settings for project ecological-network-conservation-build-build from metals.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project/project
+[info] loading settings for project ecological-network-conservation-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /home/diego/git/ecological.network.conservation/project
+[success] Generated .bloop/ecological-network-conservation-build.json
+[success] Total time: 1 s, completed Oct 15, 2026, 10:59:06 AM
+[info] loading settings for project root from build.sbt ...
+[info] set current project to econetcons (in build file:/home/diego/git/ecological.network.conservation/)
+[warn] bnd: Export econetcons,  has 2,  private references [org.jgrapht.graph, org.locationtech.jts.geom]
+[info] running econetcons.TrophicLossSweep --seeds 50 --threads 20 --verifySeeds 2
+[TrophicLossSweep] 150 assemblies × 60 variants × 2 strategies, C=0.05,0.1,0.2 t=0.25,0.5,2.0 pExt=0.8 -> data/paper_sweep/trophic_loss.csv
+[TrophicLossSweep] 10/150  241s  ETA 56.3 min  (failed 0)
+[TrophicLossSweep] 20/150  384s  ETA 41.5 min  (failed 0)
+[TrophicLossSweep] 30/150  485s  ETA 32.3 min  (failed 0)
+[TrophicLossSweep] 40/150  649s  ETA 29.7 min  (failed 0)
+[TrophicLossSweep] 50/150  876s  ETA 29.2 min  (failed 0)
+[TrophicLossSweep] 60/150  1064s  ETA 26.6 min  (failed 0)
+[TrophicLossSweep] 70/150  1296s  ETA 24.7 min  (failed 0)
+[TrophicLossSweep] 80/150  1402s  ETA 20.4 min  (failed 0)
+[TrophicLossSweep] 90/150  1623s  ETA 18.0 min  (failed 0)
+[TrophicLossSweep] 100/150  1915s  ETA 16.0 min  (failed 0)
+[TrophicLossSweep] 110/150  2160s  ETA 13.1 min  (failed 0)
+[TrophicLossSweep] 120/150  2501s  ETA 10.4 min  (failed 0)
+[TrophicLossSweep] 130/150  2726s  ETA 7.0 min  (failed 0)
+[TrophicLossSweep] 140/150  2939s  ETA 3.5 min  (failed 0)
+[TrophicLossSweep] 150/150  3081s  ETA 0.0 min  (failed 0)
+[TrophicLossSweep] DONE -> data/paper_sweep/trophic_loss.csv (150 assemblies, 0 failed)
+[success] Total time: 3083 s (51:23), completed Oct 15, 2026, 11:50:30 AM
